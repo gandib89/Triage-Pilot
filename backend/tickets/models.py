@@ -64,3 +64,79 @@ class UserProfile(models.Model):
     class Meta:
         verbose_name = 'User Profile'
         verbose_name_plural = 'User Profiles'
+
+
+class DecisionLog(models.Model):
+    """
+    Logs every decision made by the AI agent for audit trail.
+    """
+    DECISION_CHOICES = [
+        ('approved', 'Approved'),
+        ('rejected', 'Rejected'),
+        ('edited', 'Edited'),
+    ]
+
+    ticket = models.ForeignKey(
+        Ticket, on_delete=models.CASCADE, related_name='decisions')
+    agent_reasoning = models.TextField(
+        help_text="Why the agent made this decision")
+    proposed_action = models.TextField(
+        help_text="What the agent suggests doing")
+    human_decision = models.CharField(
+        max_length=50,
+        choices=DECISION_CHOICES,
+        null=True,
+        blank=True,
+        help_text="What the human decided"
+    )
+    sources_used = models.TextField(
+        null=True,
+        blank=True,
+        help_text="KB articles or sources the agent cited"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self) -> str:
+        return f"Decision for Ticket #{self.ticket.id}"
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = 'Decision Log'
+        verbose_name_plural = 'Decision Logs'
+
+
+class DecisionLog(models.Model):
+    """
+    Logs every decision made by the AI agent for audit trail.
+    """
+    ticket = models.ForeignKey(
+        Ticket, on_delete=models.CASCADE, related_name='decisions')
+    agent_reasoning = models.TextField(
+        help_text="Why the agent made this decision")
+    proposed_action = models.TextField(
+        help_text="What the agent suggests doing")
+    human_decision = models.CharField(
+        max_length=50,
+        choices=[
+            ('approved', 'Approved'),
+            ('rejected', 'Rejected'),
+            ('edited', 'Edited'),
+        ],
+        null=True,
+        blank=True,
+        help_text="What the human decided"
+    )
+    sources_used = models.TextField(
+        null=True,
+        blank=True,
+        help_text="KB articles or sources the agent cited"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self) -> str:
+        return f"Decision for Ticket #{self.ticket.id}"
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = 'Decision Log'
+        verbose_name_plural = 'Decision Logs'
