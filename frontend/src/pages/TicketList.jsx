@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react'
-
-const API_BASE = '/api'
+import api from '../api'
 
 function TicketList() {
     const [tickets, setTickets] = useState([])
@@ -8,12 +7,8 @@ function TicketList() {
     const [error, setError] = useState(null)
 
     useEffect(() => {
-        fetch(`${API_BASE}/tickets/`)
-            .then(res => {
-                if (!res.ok) throw new Error(`Server error: ${res.status}`)
-                return res.json()
-            })
-            .then(data => setTickets(data))
+        api.get('/tickets/')
+            .then(res => setTickets(res.data))
             .catch(err => setError(err.message))
             .finally(() => setIsLoading(false))
     }, [])
