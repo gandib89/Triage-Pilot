@@ -9,7 +9,7 @@ https://docs.djangoproject.com/en/4.2/topics/settings/
 For the full list of settings and their values, see
 https://docs.djangoproject.com/en/4.2/ref/settings/
 """
-
+from datetime import timedelta
 from pathlib import Path
 from datetime import timedelta
 from dotenv import load_dotenv
@@ -33,10 +33,10 @@ DEBUG = True
 ALLOWED_HOSTS = ["localhost", "127.0.0.1"]
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
-        'rest_framework_simplejwt.authentication.JWTAuthentication',  # Add this
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
     ],
     'DEFAULT_PERMISSION_CLASSES': [
-        'rest_framework.permissions.IsAuthenticated',  # Change from AllowAny
+        'rest_framework.permissions.IsAuthenticated',
     ],
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 10
@@ -61,6 +61,7 @@ INSTALLED_APPS = [
     "rest_framework",
     "corsheaders",
     'rest_framework_simplejwt',
+    'rest_framework_simplejwt.token_blacklist',
 ]
 
 MIDDLEWARE = [
@@ -151,3 +152,16 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",
 ]
 CORS_ALLOW_CREDENTIALS = True
+
+SIMPLE_JWT = {
+    # Access token expires in 1 hour
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),
+    # Refresh token expires in 7 days
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
+    # Get new refresh token when refreshing
+    'ROTATE_REFRESH_TOKENS': True,
+    # Don't blacklist old tokens (simpler for now)
+    'BLACKLIST_AFTER_ROTATION': True,
+    # Authorization: Bearer <token>
+    'AUTH_HEADER_TYPES': ('Bearer',),
+}
