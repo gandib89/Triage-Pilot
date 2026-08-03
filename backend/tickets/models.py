@@ -1,4 +1,5 @@
 from django.db import models
+from django.contrib.auth.models import User
 
 
 class Ticket(models.Model):
@@ -39,3 +40,27 @@ class Ticket(models.Model):
 
     class Meta:
         ordering = ['-created_at']
+
+
+class UserProfile(models.Model):
+    """
+    Extends the built-in User model with a role field.
+    Each user has exactly one profile with either 'agent' or 'admin' role.
+    """
+    ROLE_CHOICES = [
+        ('agent', 'Agent'),
+        ('admin', 'Admin'),
+    ]
+
+    user = models.OneToOneField(
+        User, on_delete=models.CASCADE, related_name='profile')
+    role = models.CharField(
+        max_length=10, choices=ROLE_CHOICES, default='agent')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self) -> str:
+        return f"{self.user.username} - {self.role}"
+
+    class Meta:
+        verbose_name = 'User Profile'
+        verbose_name_plural = 'User Profiles'
