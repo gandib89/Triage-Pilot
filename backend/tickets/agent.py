@@ -40,7 +40,7 @@ def build_prompt(ticket) -> str:
     return prompt
 
 
-def call_ollama(prompt: str, model: str = "llama3.2:3b") -> str:
+def call_ollama(prompt: str, model: str = "llama3.2") -> str:
     """
     Call Ollama API with the prompt.
     """
