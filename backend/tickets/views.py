@@ -19,17 +19,17 @@ class TicketViewSet(viewsets.ModelViewSet):
         Triggers AI agent to categorize the ticket.
         """
         ticket = self.get_object()
-        
+
         try:
             # Call the agent
             result = categorize_ticket(ticket)
-            
+
             # Update ticket with agent's categorization
             ticket.category = result['category']
             ticket.urgency = result['urgency']
             ticket.status = 'in_review'
             ticket.save()
-            
+
             # Create decision log
             decision_log = DecisionLog.objects.create(
                 ticket=ticket,
@@ -37,7 +37,7 @@ class TicketViewSet(viewsets.ModelViewSet):
                 proposed_action=f"Categorized as {result['category']} with {result['urgency']} urgency. Confidence: {result['confidence']}%",
                 sources_used="Local LLM categorization"
             )
-            
+
             # Return success response
             return Response({
                 'success': True,
@@ -49,7 +49,7 @@ class TicketViewSet(viewsets.ModelViewSet):
                 'decision_log_id': decision_log.id,
                 'status': ticket.status
             }, status=status.HTTP_200_OK)
-            
+
         except Exception as e:
             return Response({
                 'success': False,
