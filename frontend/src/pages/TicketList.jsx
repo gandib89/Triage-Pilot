@@ -8,7 +8,7 @@ function TicketList() {
 
     useEffect(() => {
         api.get('/tickets/')
-            .then(res => setTickets(res.data))
+            .then(res => setTickets(res.data.results ?? res.data))
             .catch(err => setError(err.message))
             .finally(() => setIsLoading(false))
     }, [])
