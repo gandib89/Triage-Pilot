@@ -10,36 +10,43 @@ from .knowledge_base import search_knowledge_base
 
 def build_prompt(ticket) -> str:
     """Build a structured prompt for the LLM."""
-    prompt = f"""You are a support ticket categorization assistant. Analyze the following support ticket and respond with ONLY a JSON object (no markdown, no explanation).
+    prompt = f"""You are a support ticket categorization assistant. Analyze the support ticket and respond with ONLY a JSON object.
 
 Ticket Subject: {ticket.subject}
 Ticket Body: {ticket.body}
 
-Categorize this ticket and respond with this exact JSON format:
+Respond with this exact JSON format:
 {{
-    "category": "technical" or "billing" or "account" or "general",
-    "urgency": "low" or "medium" or "high" or "critical",
-    "confidence": <number between 0-100>,
-    "reasoning": "<brief explanation of your decision>"
+    "category": "technical" | "billing" | "account" | "general",
+    "urgency": "low" | "medium" | "high" | "critical",
+    "confidence": 0-100,
+    "reasoning": "brief explanation"
 }}
 
-Rules:
-- technical: password resets, bugs, API issues, technical problems
-- billing: payments, refunds, invoices, pricing questions
-- account: login issues, account settings, profile changes, ownership
-- general: questions, how-to, feature requests, general inquiries
+Category Guidelines:
+- technical: bugs, crashes, API issues, 2FA problems, system errors, integrations
+- billing: payments, refunds, invoices, pricing, subscription changes
+- account: login, ownership transfer, account settings, deletion, permissions
+- general: how-to questions, documentation, feature requests, general inquiries
 
-- critical: system down, data breach, payment failure
-- high: account locked, service not working, urgent business need
-- medium: feature requests, non-urgent bugs, billing questions
-- low: general questions, how-to, documentation
+Urgency Guidelines:
+- critical: system down, data breach, security incident, payment processing failure
+- high: account locked, service broken, urgent business blocker (customer uses words like "urgent", "ASAP")
+- medium: non-urgent bugs, billing questions, feature requests
+- low: how-to questions, documentation requests, general inquiries
 
-Respond with ONLY the JSON, nothing else."""
+Confidence Guidelines:
+- 80-100: Clear category and urgency, unambiguous ticket
+- 60-79: Probable category, minor ambiguity
+- 40-59: Uncertain, could fit multiple categories
+- 0-39: Very unclear or insufficient information
+
+IMPORTANT: Respond with ONLY valid JSON, no markdown code blocks, no explanations."""
 
     return prompt
 
 
-def call_ollama(prompt: str, model: str = "llama3.2:3b") -> str:
+def call_ollama(prompt: str, model: str = "llama3.2:latest", timeout: int = 60) -> str:
     """Call Ollama API with the prompt."""
     try:
         response = ollama.chat(
@@ -64,6 +71,10 @@ def parse_response(response: str) -> Dict[str, Any]:
         lines = response.split('\n')
         response = '\n'.join(lines[1:-1]) if len(lines) > 2 else response
         response = response.replace('```json', '').replace('```', '').strip()
+
+    # Try to fix incomplete JSON by adding closing brace
+    if not response.endswith('}'):
+        response = response + '}'
 
     try:
         data = json.loads(response)
@@ -96,11 +107,11 @@ def build_decision_prompt(ticket, category: str, urgency: str, kb_articles: list
     if kb_articles:
         kb_context = "\n\nRelevant Knowledge Base Articles:\n"
         for i, article in enumerate(kb_articles, 1):
-            kb_context += f"\n[{article['id']}] {article['title']}:\n{article['content']}\n"
+            kb_context += f"\n[{article['id']}] {article['title']} (relevance: {article['relevance_score']}):\n{article['content']}\n"
     else:
-        kb_context = "\n\nNo relevant KB articles found."
+        kb_context = "\n\nNo relevant KB articles found. This ticket requires human review."
 
-    prompt = f"""You are a support agent assistant. Based on the ticket and knowledge base articles below, decide the best action.
+    prompt = f"""You are a support agent assistant. Based on the ticket and available knowledge base articles, decide the best action.
 
 Ticket Subject: {ticket.subject}
 Ticket Body: {ticket.body}
@@ -108,21 +119,36 @@ Category: {category}
 Urgency: {urgency}
 {kb_context}
 
-Decide the action and respond with ONLY this JSON format:
+Respond with ONLY this JSON format:
 {{
-    "action": "reply" or "escalate",
-    "drafted_response": "<draft reply to customer if action is reply, empty string if escalate>",
-    "escalation_reason": "<reason for escalation if action is escalate, empty string if reply>",
-    "sources_cited": ["<list of KB article IDs used, e.g. KB001>"]
+    "action": "reply" | "escalate",
+    "drafted_response": "customer-facing reply text OR empty string",
+    "escalation_reason": "reason for escalation OR empty string",
+    "sources_cited": ["KB001", "KB002"]
 }}
 
-Rules:
-- Use "reply" if KB articles provide a clear solution
-- Use "escalate" if no KB article helps OR issue is critical/complex
-- drafted_response must be professional and cite KB sources
-- Keep drafted_response under 150 words
+Decision Rules:
+1. Use "reply" ONLY if:
+   - KB articles clearly address the issue
+   - You can provide specific steps or information
+   - The issue is straightforward (password reset, billing info, how-to)
 
-Respond with ONLY the JSON, nothing else."""
+2. Use "escalate" if:
+   - No KB articles match the issue
+   - Issue is critical or complex (security, data loss, system outage)
+   - Customer situation requires human judgment
+   - KB articles are vaguely related but don't solve the problem
+
+Drafted Response Guidelines (if action is "reply"):
+- Be professional and empathetic
+- Cite KB article IDs in brackets: "According to [KB001]..."
+- Provide clear, actionable steps
+- Keep under 150 words
+- Include contact info if needed: support@company.com
+
+IMPORTANT: Only cite KB articles that are directly relevant (high relevance score). Don't cite articles just because they're listed.
+
+Respond with ONLY valid JSON, no markdown blocks."""
 
     return prompt
 
@@ -135,6 +161,10 @@ def parse_decision_response(response: str) -> dict:
         lines = response.split('\n')
         response = '\n'.join(lines[1:-1]) if len(lines) > 2 else response
         response = response.replace('```json', '').replace('```', '').strip()
+
+    # Try to fix incomplete JSON by adding closing brace
+    if not response.endswith('}'):
+        response = response + '}'
 
     try:
         data = json.loads(response)
@@ -166,7 +196,22 @@ def categorize_ticket(ticket) -> dict:
     response = call_ollama(prompt)
     categorization = parse_response(response)
 
-    # Step 2: Search KB
+    # Step 2: Check confidence threshold
+    # If confidence is too low, escalate immediately
+    if categorization['confidence'] < 50:
+        return {
+            'category': categorization['category'],
+            'urgency': 'medium',  # Default to medium for low-confidence cases
+            'confidence': categorization['confidence'],
+            'reasoning': categorization['reasoning'],
+            'action': 'escalate',
+            'drafted_response': '',
+            'escalation_reason': f"Low confidence ({categorization['confidence']}%) in categorization. Requires human review.",
+            'sources_cited': [],
+            'kb_articles_found': 0,
+        }
+
+    # Step 3: Search KB
     search_query = f"{ticket.subject} {ticket.body}"
     kb_articles = search_knowledge_base(
         query=search_query,
@@ -174,7 +219,7 @@ def categorize_ticket(ticket) -> dict:
         max_results=3
     )
 
-    # Step 3: Draft response
+    # Step 4: Draft response
     decision_prompt = build_decision_prompt(
         ticket=ticket,
         category=categorization['category'],
@@ -184,7 +229,7 @@ def categorize_ticket(ticket) -> dict:
     decision_response = call_ollama(decision_prompt)
     decision = parse_decision_response(decision_response)
 
-    # Step 4: Return combined result
+    # Step 5: Return combined result
     return {
         'category': categorization['category'],
         'urgency': categorization['urgency'],

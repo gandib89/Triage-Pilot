@@ -36,8 +36,7 @@ class TicketViewSet(viewsets.ModelViewSet):
                 ticket=ticket,
                 agent_reasoning=result['reasoning'],
                 proposed_action=result['drafted_response'] or result['escalation_reason'],
-                sources_used=', '.join(
-                    result['sources_cited']) if result['sources_cited'] else 'None'
+                sources_used=result['sources_cited']
             )
 
             # Return success response
