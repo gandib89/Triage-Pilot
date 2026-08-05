@@ -31,11 +31,13 @@ class TicketViewSet(viewsets.ModelViewSet):
             ticket.save()
 
             # Create decision log
+
             decision_log = DecisionLog.objects.create(
                 ticket=ticket,
                 agent_reasoning=result['reasoning'],
-                proposed_action=f"Categorized as {result['category']} with {result['urgency']} urgency. Confidence: {result['confidence']}%",
-                sources_used="Local LLM categorization"
+                proposed_action=result['drafted_response'] or result['escalation_reason'],
+                sources_used=', '.join(
+                    result['sources_cited']) if result['sources_cited'] else 'None'
             )
 
             # Return success response
@@ -46,6 +48,11 @@ class TicketViewSet(viewsets.ModelViewSet):
                 'urgency': result['urgency'],
                 'confidence': result['confidence'],
                 'reasoning': result['reasoning'],
+                'action': result['action'],
+                'drafted_response': result['drafted_response'],
+                'escalation_reason': result['escalation_reason'],
+                'sources_cited': result['sources_cited'],
+                'kb_articles_found': result['kb_articles_found'],
                 'decision_log_id': decision_log.id,
                 'status': ticket.status
             }, status=status.HTTP_200_OK)
