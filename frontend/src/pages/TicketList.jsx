@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { Link } from 'react-router-dom'
 import api from '../api'
 
 function TicketList() {
@@ -19,6 +20,7 @@ function TicketList() {
     return (
         <main>
             <h1>Tickets</h1>
+            <p><Link to="/triage">Go to Triage Queue →</Link></p>
             {tickets.length === 0 ? (
                 <p>No tickets yet.</p>
             ) : (

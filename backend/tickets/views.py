@@ -1,9 +1,10 @@
+from django.utils import timezone
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny
 from .models import Ticket, DecisionLog
-from .serializers import TicketSerializer
+from .serializers import TicketSerializer, DecisionLogSerializer, DecisionLogDecideSerializer
 from .agent import categorize_ticket
 
 
@@ -61,3 +62,44 @@ class TicketViewSet(viewsets.ModelViewSet):
                 'success': False,
                 'error': str(e)
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class DecisionLogViewSet(viewsets.ReadOnlyModelViewSet):
+    queryset = DecisionLog.objects.select_related('ticket').all()
+    serializer_class = DecisionLogSerializer
+    permission_classes = [AllowAny]  # remove this after login is made
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        status_param = self.request.query_params.get('status')
+        if status_param == 'pending':
+            queryset = queryset.filter(human_decision__isnull=True)
+        return queryset
+
+    @action(detail=True, methods=['post'])
+    def decide(self, request, pk=None):
+        """
+        POST /api/decisions/{id}/decide/
+        Body: {"decision": "approved" | "rejected" | "edited", "edited_action"?: string}
+        Records the human decision and updates the linked ticket's status.
+        """
+        decision_log = self.get_object()
+
+        serializer = DecisionLogDecideSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        decision = serializer.validated_data['decision']
+
+        decision_log.human_decision = decision
+        if decision == 'edited':
+            decision_log.edited_action = serializer.validated_data['edited_action']
+        decision_log.decided_at = timezone.now()
+        decision_log.save()
+
+        ticket = decision_log.ticket
+        ticket.status = 'rejected' if decision == 'rejected' else 'approved'
+        ticket.save()
+
+        return Response(
+            DecisionLogSerializer(decision_log).data,
+            status=status.HTTP_200_OK
+        )
