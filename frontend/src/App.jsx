@@ -2,6 +2,8 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import TicketList from './pages/TicketList'
 import TicketDetail from './pages/TicketDetail'
+import TriageQueue from './pages/TriageQueue'
+import DecisionDetail from './pages/DecisionDetail'
 import Login from './pages/Login'
 import ProtectedRoute from './components/ProtectedRoute'
 
@@ -13,6 +15,8 @@ function App() {
         <Route path="/login" element={<Login />} />
         <Route path="/tickets" element={<ProtectedRoute><TicketList /></ProtectedRoute>} />
         <Route path="/tickets/:id" element={<ProtectedRoute><TicketDetail /></ProtectedRoute>} />
+        <Route path="/triage" element={<ProtectedRoute><TriageQueue /></ProtectedRoute>} />
+        <Route path="/triage/:id" element={<ProtectedRoute><DecisionDetail /></ProtectedRoute>} />
       </Routes>
     </BrowserRouter>
   )

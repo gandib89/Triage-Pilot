@@ -92,6 +92,16 @@ class DecisionLog(models.Model):
         blank=True,
         help_text="KB articles or sources the agent cited"
     )
+    edited_action = models.TextField(
+        null=True,
+        blank=True,
+        help_text="Human-edited version of the proposed action, if edited"
+    )
+    decided_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When the human made a decision on this item"
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self) -> str:
