@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
-import { useParams, Link } from 'react-router-dom'
+import { useParams, useNavigate, Link } from 'react-router-dom'
 import dayjs from 'dayjs'
-import { Archive, ArrowLeft, FileText } from 'lucide-react'
+import { Archive, ArrowLeft, FileText, Trash2 } from 'lucide-react'
 import api from '../api'
 import { Button, ErrorNote, Eyebrow, Loading, Panel, Tag } from '../components/ui'
 import { hairline } from '../components/tokens'
@@ -16,10 +16,12 @@ function displayStatus(status) {
 
 function TicketDetail() {
     const { id } = useParams()
+    const navigate = useNavigate()
     const [ticket, setTicket] = useState(null)
     const [isLoading, setIsLoading] = useState(true)
     const [error, setError] = useState(null)
     const [isClosing, setIsClosing] = useState(false)
+    const [isDeleting, setIsDeleting] = useState(false)
 
     useEffect(() => {
         api.get(`/tickets/${id}/`)
@@ -38,6 +40,19 @@ function TicketDetail() {
             setError(err.response?.data?.detail || err.message)
         } finally {
             setIsClosing(false)
+        }
+    }
+
+    const deleteTicket = async () => {
+        if (!window.confirm('Delete this ticket? This cannot be undone.')) return
+        setIsDeleting(true)
+        setError(null)
+        try {
+            await api.delete(`/tickets/${id}/`)
+            navigate('/tickets')
+        } catch (err) {
+            setError(err.response?.data?.detail || err.message)
+            setIsDeleting(false)
         }
     }
 
@@ -87,7 +102,7 @@ function TicketDetail() {
                         <p className="mb-3 font-mono text-[10px] uppercase tracking-[0.18em] text-ink-faint">Submitted</p>
                         <p className="text-sm text-ink-dim">{dayjs(ticket.created_at).format('MMM D, YYYY · h:mm A')}</p>
                     </div>
-                    {status !== 'closed' && (
+                    {status !== 'closed' ? (
                         <Button
                             variant="ghost"
                             icon={Archive}
@@ -97,6 +112,17 @@ function TicketDetail() {
                             onClick={closeTicket}
                         >
                             Close ticket
+                        </Button>
+                    ) : (
+                        <Button
+                            variant="danger"
+                            icon={Trash2}
+                            className="mt-auto"
+                            disabled={isDeleting}
+                            loading={isDeleting}
+                            onClick={deleteTicket}
+                        >
+                            Delete ticket
                         </Button>
                     )}
                 </Panel>

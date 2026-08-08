@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
-import { Check, Pencil, X, ArrowLeft, FileText } from 'lucide-react'
+import { Check, Pencil, X, ArrowLeft, FileText, Trash2 } from 'lucide-react'
 import api from '../api'
 import { Button, ErrorNote, Eyebrow, Loading, Panel, Tag } from '../components/ui'
 import { fieldClass, hairline, urgencyTone } from '../components/tokens'
@@ -32,6 +32,7 @@ function DecisionDetail() {
     const [isEditing, setIsEditing] = useState(false)
     const [editedText, setEditedText] = useState('')
     const [isSubmitting, setIsSubmitting] = useState(false)
+    const [isDeleting, setIsDeleting] = useState(false)
 
     useEffect(() => {
         api.get(`/decisions/${id}/`)
@@ -55,6 +56,19 @@ function DecisionDetail() {
             setError(err.response?.data ? JSON.stringify(err.response.data) : err.message)
         } finally {
             setIsSubmitting(false)
+        }
+    }
+
+    const deleteTicket = async () => {
+        if (!window.confirm('Delete this ticket? This cannot be undone.')) return
+        setIsDeleting(true)
+        setError(null)
+        try {
+            await api.delete(`/tickets/${decision.ticket.id}/`)
+            navigate('/triage')
+        } catch (err) {
+            setError(err.response?.data ? JSON.stringify(err.response.data) : err.message)
+            setIsDeleting(false)
         }
     }
 
@@ -82,10 +96,17 @@ function DecisionDetail() {
             </Link>
 
             <div className="mt-12 mb-12 max-w-3xl">
-                <div className="flex flex-wrap items-center gap-2.5">
-                    <Eyebrow>{alreadyDecided ? `Decided · ${decision.human_decision}` : 'Awaiting review'}</Eyebrow>
-                    <Tag tone={urgencyTone[ticket.urgency] || 'neutral'}>{ticket.urgency || 'unset'}</Tag>
-                    <Tag>{ticket.category || 'uncategorized'}</Tag>
+                <div className="flex flex-wrap items-center justify-between gap-2.5">
+                    <div className="flex flex-wrap items-center gap-2.5">
+                        <Eyebrow>{alreadyDecided ? `Decided · ${decision.human_decision}` : 'Awaiting review'}</Eyebrow>
+                        <Tag tone={urgencyTone[ticket.urgency] || 'neutral'}>{ticket.urgency || 'unset'}</Tag>
+                        <Tag>{ticket.category || 'uncategorized'}</Tag>
+                    </div>
+                    {ticket.status === 'closed' && (
+                        <Button variant="danger" icon={Trash2} disabled={isDeleting} loading={isDeleting} onClick={deleteTicket}>
+                            Delete ticket
+                        </Button>
+                    )}
                 </div>
                 <h1 className="mt-7 text-[clamp(1.9rem,5vw,3.25rem)]">{ticket.subject}</h1>
                 <p className="mt-3 text-sm text-ink-faint">
