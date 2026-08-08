@@ -1,10 +1,13 @@
 """
 Knowledge Base search tool for the AI agent.
-Currently uses stubbed data - replace with real RAG API when ready.
 
-TODO: Wire in real RAG API (filed as GitHub issue)
+Search hits the RAG index first (ingested PDFs, see tickets/rag.py). The
+hardcoded articles below stay as a fallback for when no documents have been
+ingested yet, or when nothing in the index clears the similarity threshold.
 """
 from typing import List, Dict
+
+from .rag import search_chunks
 
 
 # Mock knowledge base articles
@@ -304,16 +307,28 @@ Contact support immediately if you need help with account recovery.""",
 
 def search_knowledge_base(query: str, category: str = None, max_results: int = 3) -> List[Dict]:
     """
-    Search the knowledge base for relevant articles.
+    Search the knowledge base for relevant material.
+
+    Tries semantic search over ingested documents first, then falls back to the
+    hardcoded articles. Both paths return the same shape, so callers (and the
+    agent's prompts) don't care which one answered.
 
     Args:
         query: Search query (ticket subject + body keywords)
         category: Optional category filter (technical/billing/account/general)
-        max_results: Maximum number of articles to return
+        max_results: Maximum number of results to return
 
     Returns:
-        List of relevant KB articles with relevance scores
+        List of relevant KB entries with relevance scores
     """
+    chunks = search_chunks(query, category=category, max_results=max_results)
+    if chunks:
+        return chunks
+    return _search_static_articles(query, category, max_results)
+
+
+def _search_static_articles(query: str, category: str = None, max_results: int = 3) -> List[Dict]:
+    """Keyword scoring over the hardcoded KB_ARTICLES fallback."""
     query_words = set(query.lower().split())
     results = []
 

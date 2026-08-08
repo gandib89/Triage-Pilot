@@ -108,8 +108,10 @@ def build_decision_prompt(ticket, category: str, urgency: str, kb_articles: list
         kb_context = "\n\nRelevant Knowledge Base Articles:\n"
         for i, article in enumerate(kb_articles, 1):
             kb_context += f"\n[{article['id']}] {article['title']} (relevance: {article['relevance_score']}):\n{article['content']}\n"
+        example_id = kb_articles[0]['id']
     else:
         kb_context = "\n\nNo relevant KB articles found. This ticket requires human review."
+        example_id = "KB001"
 
     prompt = f"""You are a support agent assistant. Based on the ticket and available knowledge base articles, decide the best action.
 
@@ -124,7 +126,7 @@ Respond with ONLY this JSON format:
     "action": "reply" | "escalate",
     "drafted_response": "customer-facing reply text OR empty string",
     "escalation_reason": "reason for escalation OR empty string",
-    "sources_cited": ["KB001", "KB002"]
+    "sources_cited": ["{example_id}"]
 }}
 
 Decision Rules:
@@ -141,7 +143,7 @@ Decision Rules:
 
 Drafted Response Guidelines (if action is "reply"):
 - Be professional and empathetic
-- Cite KB article IDs in brackets: "According to [KB001]..."
+- Cite the exact article ID shown in brackets above, e.g. "According to [{example_id}]..." — never invent an ID that isn't listed above
 - Provide clear, actionable steps
 - Keep under 150 words
 - Include contact info if needed: support@company.com

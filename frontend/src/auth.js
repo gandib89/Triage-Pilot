@@ -1,7 +1,7 @@
 import { jwtDecode } from 'jwt-decode'
 import { ACCESS_TOKEN } from './constants'
 
-export const STAFF_ROLES = ['agent', 'admin']
+export const STAFF_ROLES = ['staff', 'admin']
 
 export function getRole() {
     const token = localStorage.getItem(ACCESS_TOKEN)

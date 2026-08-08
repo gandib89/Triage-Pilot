@@ -17,7 +17,7 @@ class IsAdmin(permissions.BasePermission):
 
 class IsAgent(permissions.BasePermission):
     """
-    Only agent users (or admin) can access.
+    Only staff users (or admin) can access.
     """
 
     def has_permission(self, request, view):
@@ -25,5 +25,5 @@ class IsAgent(permissions.BasePermission):
             request.user and
             request.user.is_authenticated and
             hasattr(request.user, 'profile') and
-            request.user.profile.role in ['agent', 'admin']
+            request.user.profile.role in ['staff', 'admin']
         )

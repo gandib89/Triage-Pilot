@@ -11,6 +11,7 @@ const statusTone = {
     rejected: 'danger',
     pending_review: 'violet',
     in_review: 'violet',
+    closed: 'neutral',
 }
 
 const statusLabels = { in_review: 'pending', pending_review: 'pending review' }
