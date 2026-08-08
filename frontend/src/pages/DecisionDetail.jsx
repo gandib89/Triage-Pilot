@@ -1,7 +1,26 @@
 import { useState, useEffect } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, Link } from 'react-router-dom'
+import { Check, Pencil, X, ArrowLeft, FileText } from 'lucide-react'
 import api from '../api'
-import './TriageQueue.css'
+import { Button, ErrorNote, Eyebrow, Loading, Panel, Tag } from '../components/ui'
+import { fieldClass, hairline, urgencyTone } from '../components/tokens'
+
+function Block({ label, children, className = '' }) {
+    return (
+        <div className={className}>
+            <p className="mb-3 font-mono text-[10px] uppercase tracking-[0.18em] text-ink-faint">{label}</p>
+            {children}
+        </div>
+    )
+}
+
+function Quote({ children }) {
+    return (
+        <p className="whitespace-pre-wrap rounded-2xl bg-shell p-5 text-[14.5px] leading-relaxed text-ink-dim ring-1 ring-inset ring-hairline/70">
+            {children}
+        </p>
+    )
+}
 
 function DecisionDetail() {
     const { id } = useParams()
@@ -38,97 +57,130 @@ function DecisionDetail() {
         }
     }
 
-    if (isLoading) return <p>Loading...</p>
-    if (error && !decision) return <p>Error: {error}</p>
+    if (isLoading) return <Loading />
+    if (error && !decision) return <ErrorNote>{error}</ErrorNote>
     if (!decision) return null
 
     const { ticket } = decision
     const alreadyDecided = Boolean(decision.human_decision)
 
+    const sources = Array.isArray(decision.sources_used)
+        ? decision.sources_used
+        : decision.sources_used ? [decision.sources_used] : []
+
     return (
-        <main className="decision-detail">
-            <h1>Review Decision</h1>
-            {alreadyDecided && (
-                <p className="already-decided">
-                    Already decided: <strong>{decision.human_decision}</strong>
-                </p>
-            )}
-            {error && <p className="form-error">Error: {error}</p>}
+        <div className="pb-28">
+            <Link
+                to="/triage"
+                className="group inline-flex items-center gap-2.5 text-sm text-ink-faint transition-colors duration-500 ease-fluid hover:text-ink"
+            >
+                <span className="flex size-8 items-center justify-center rounded-full bg-shell transition-transform duration-500 ease-fluid group-hover:-translate-x-0.5">
+                    <ArrowLeft size={14} {...hairline} />
+                </span>
+                Back to queue
+            </Link>
 
-            <div className="side-by-side">
-                <section className="panel">
-                    <h2>Ticket</h2>
-                    <p><strong>Subject:</strong> {ticket.subject}</p>
-                    <p><strong>Category:</strong> {ticket.category || 'uncategorized'}</p>
-                    <p><strong>Urgency:</strong> {ticket.urgency || 'unset'}</p>
-                    <p><strong>Body:</strong></p>
-                    <p className="body-text">{ticket.body}</p>
-                </section>
+            <div className="mt-12 mb-12 max-w-3xl">
+                <div className="flex flex-wrap items-center gap-2.5">
+                    <Eyebrow>{alreadyDecided ? `Decided · ${decision.human_decision}` : 'Awaiting review'}</Eyebrow>
+                    <Tag tone={urgencyTone[ticket.urgency] || 'neutral'}>{ticket.urgency || 'unset'}</Tag>
+                    <Tag>{ticket.category || 'uncategorized'}</Tag>
+                </div>
+                <h1 className="mt-7 text-[clamp(1.9rem,5vw,3.25rem)]">{ticket.subject}</h1>
+            </div>
 
-                <section className="panel">
-                    <h2>Proposed Action</h2>
-                    <p><strong>Agent reasoning:</strong></p>
-                    <p className="body-text">{decision.agent_reasoning}</p>
+            {error && <div className="mb-8"><ErrorNote>{error}</ErrorNote></div>}
 
-                    <p><strong>Action:</strong></p>
-                    {isEditing ? (
-                        <textarea
-                            className="edit-textarea"
-                            value={editedText}
-                            onChange={e => setEditedText(e.target.value)}
-                            rows={8}
-                        />
-                    ) : (
-                        <p className="body-text">
-                            {decision.edited_action || decision.proposed_action}
-                        </p>
-                    )}
+            <div className="grid gap-4 md:grid-cols-12">
+                <Panel className="md:col-span-5" innerClassName="flex h-full flex-col gap-8 p-8 sm:p-9">
+                    <Block label="What the customer wrote">
+                        <Quote>{ticket.body}</Quote>
+                    </Block>
 
-                    <p><strong>Sources cited:</strong></p>
-                    {(() => {
-                        const sources = Array.isArray(decision.sources_used)
-                            ? decision.sources_used
-                            : decision.sources_used ? [decision.sources_used] : []
-                        return sources.length > 0 ? (
-                            <ul className="sources-list">
+                    <Block label="Sources cited" className="mt-auto">
+                        {sources.length > 0 ? (
+                            <ul className="flex flex-col gap-2">
                                 {sources.map((source, i) => (
-                                    <li key={i}>{typeof source === 'string' ? source : JSON.stringify(source)}</li>
+                                    <li
+                                        key={i}
+                                        className="flex items-start gap-3 rounded-2xl bg-shell px-4 py-3 text-[13px] text-ink-dim ring-1 ring-inset ring-hairline/70"
+                                    >
+                                        <FileText size={14} {...hairline} className="mt-0.5 shrink-0 text-accent" />
+                                        {typeof source === 'string' ? source : JSON.stringify(source)}
+                                    </li>
                                 ))}
                             </ul>
                         ) : (
-                            <p>No sources cited.</p>
-                        )
-                    })()}
-                </section>
+                            <p className="text-sm text-ink-faint">No sources cited — the agent escalated instead.</p>
+                        )}
+                    </Block>
+                </Panel>
+
+                <Panel className="md:col-span-7" innerClassName="flex h-full flex-col gap-8 p-8 sm:p-9">
+                    <Block label="Agent reasoning">
+                        <Quote>{decision.agent_reasoning}</Quote>
+                    </Block>
+
+                    <Block label={isEditing ? 'Proposed action — editing' : 'Proposed action'}>
+                        {isEditing ? (
+                            <textarea
+                                value={editedText}
+                                onChange={e => setEditedText(e.target.value)}
+                                rows={10}
+                                className={`${fieldClass} resize-y p-5 leading-relaxed`}
+                            />
+                        ) : (
+                            <Quote>{decision.edited_action || decision.proposed_action}</Quote>
+                        )}
+                    </Block>
+                </Panel>
             </div>
 
             {!alreadyDecided && (
-                <div className="decision-controls">
-                    {isEditing ? (
-                        <>
-                            <button disabled={isSubmitting} onClick={() => submitDecision('edited')}>
-                                Save Edit &amp; Approve
-                            </button>
-                            <button disabled={isSubmitting} onClick={() => { setIsEditing(false); setEditedText(decision.proposed_action) }}>
-                                Cancel
-                            </button>
-                        </>
-                    ) : (
-                        <>
-                            <button disabled={isSubmitting} onClick={() => submitDecision('approved')}>
-                                Approve
-                            </button>
-                            <button disabled={isSubmitting} onClick={() => setIsEditing(true)}>
-                                Edit
-                            </button>
-                            <button disabled={isSubmitting} onClick={() => submitDecision('rejected')}>
-                                Reject
-                            </button>
-                        </>
-                    )}
+                /* Decision island — floats over the content, never welded to the edge. */
+                <div className="pointer-events-none fixed inset-x-0 bottom-0 z-20 flex justify-center px-4 pb-6">
+                    <div className="pointer-events-auto flex flex-wrap items-center justify-center gap-2 rounded-full bg-core/75 p-2 ring-1 ring-inset ring-hairline/70 backdrop-blur-2xl">
+                        {isEditing ? (
+                            <>
+                                <Button
+                                    icon={Check}
+                                    disabled={isSubmitting}
+                                    loading={isSubmitting}
+                                    onClick={() => submitDecision('edited')}
+                                >
+                                    Save &amp; approve
+                                </Button>
+                                <Button
+                                    variant="ghost"
+                                    icon={X}
+                                    disabled={isSubmitting}
+                                    onClick={() => { setIsEditing(false); setEditedText(decision.proposed_action) }}
+                                >
+                                    Cancel
+                                </Button>
+                            </>
+                        ) : (
+                            <>
+                                <Button
+                                    icon={Check}
+                                    disabled={isSubmitting}
+                                    loading={isSubmitting}
+                                    onClick={() => submitDecision('approved')}
+                                >
+                                    Approve
+                                </Button>
+                                <Button variant="ghost" icon={Pencil} disabled={isSubmitting} onClick={() => setIsEditing(true)}>
+                                    Edit
+                                </Button>
+                                <Button variant="danger" icon={X} disabled={isSubmitting} onClick={() => submitDecision('rejected')}>
+                                    Reject
+                                </Button>
+                            </>
+                        )}
+                    </div>
                 </div>
             )}
-        </main>
+        </div>
     )
 }
 

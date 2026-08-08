@@ -1,17 +1,82 @@
+from django.contrib.auth.models import User
 from django.utils import timezone
-from rest_framework import viewsets, status
+from rest_framework import viewsets, status, generics, permissions
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework_simplejwt.views import TokenObtainPairView
 from .models import Ticket, DecisionLog
-from .serializers import TicketSerializer, DecisionLogSerializer, DecisionLogDecideSerializer
+from .serializers import (
+    TicketSerializer, DecisionLogSerializer, DecisionLogDecideSerializer,
+    CustomTokenObtainPairSerializer, RegisterSerializer,
+    VerifyOTPSerializer, ResendOTPSerializer,
+)
 from .agent import categorize_ticket
+from .otp import send_otp_email
+
+
+class IsSupportStaff(permissions.BasePermission):
+    """Allows access only to authenticated agent/admin accounts."""
+
+    def has_permission(self, request, view):
+        user = request.user
+        if not user or not user.is_authenticated:
+            return False
+        profile = getattr(user, 'profile', None)
+        return bool(profile and profile.is_staff_role)
+
+
+class CustomTokenObtainPairView(TokenObtainPairView):
+    serializer_class = CustomTokenObtainPairSerializer
+
+
+class RegisterView(generics.CreateAPIView):
+    """Public self-service signup for customers (ticket submitters)."""
+    queryset = User.objects.all()
+    serializer_class = RegisterSerializer
+    permission_classes = [AllowAny]
+
+
+class VerifyOTPView(generics.GenericAPIView):
+    """POST /api/verify-otp/ — confirms the emailed code and unlocks sign-in."""
+    serializer_class = VerifyOTPSerializer
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        return Response({'detail': 'Email verified successfully.'}, status=status.HTTP_200_OK)
+
+
+class ResendOTPView(generics.GenericAPIView):
+    """POST /api/resend-otp/ — issues a fresh code, subject to a cooldown."""
+    serializer_class = ResendOTPSerializer
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = serializer.validated_data['user']
+        profile = serializer.validated_data['profile']
+        code = profile.generate_otp()
+        send_otp_email(user, code)
+        return Response({'detail': 'Verification code resent.'}, status=status.HTTP_200_OK)
 
 
 class TicketViewSet(viewsets.ModelViewSet):
     queryset = Ticket.objects.all()
     serializer_class = TicketSerializer
-    permission_classes = [AllowAny]  # remove this after login is made
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        profile = getattr(self.request.user, 'profile', None)
+        if profile and profile.is_staff_role:
+            return queryset
+        return queryset.filter(created_by=self.request.user)
+
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user)
 
     @action(detail=True, methods=['post'])
     def triage(self, request, pk=None):
@@ -67,7 +132,7 @@ class TicketViewSet(viewsets.ModelViewSet):
 class DecisionLogViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = DecisionLog.objects.select_related('ticket').all()
     serializer_class = DecisionLogSerializer
-    permission_classes = [AllowAny]  # remove this after login is made
+    permission_classes = [IsSupportStaff]
 
     def get_queryset(self):
         queryset = super().get_queryset()

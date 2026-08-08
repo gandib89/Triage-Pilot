@@ -159,3 +159,18 @@ SIMPLE_JWT = {
     # Authorization: Bearer <token>
     'AUTH_HEADER_TYPES': ('Bearer',),
 }
+
+# Email (used to send signup OTP codes). Defaults to printing to the console
+# so verification works locally with zero setup; set EMAIL_HOST_USER /
+# EMAIL_HOST_PASSWORD to send real mail via SMTP instead.
+DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', 'TriagePilot <no-reply@triagepilot.local>')
+EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER')
+EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD')
+
+if EMAIL_HOST_USER and EMAIL_HOST_PASSWORD:
+    EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+    EMAIL_HOST = os.environ.get('EMAIL_HOST', 'smtp.gmail.com')
+    EMAIL_PORT = int(os.environ.get('EMAIL_PORT', 587))
+    EMAIL_USE_TLS = os.environ.get('EMAIL_USE_TLS', 'true').lower() == 'true'
+else:
+    EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
