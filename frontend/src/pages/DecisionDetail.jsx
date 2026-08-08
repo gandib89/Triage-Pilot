@@ -4,6 +4,7 @@ import { Check, Pencil, X, ArrowLeft, FileText } from 'lucide-react'
 import api from '../api'
 import { Button, ErrorNote, Eyebrow, Loading, Panel, Tag } from '../components/ui'
 import { fieldClass, hairline, urgencyTone } from '../components/tokens'
+import MessageThread from '../components/MessageThread'
 
 function Block({ label, children, className = '' }) {
     return (
@@ -87,6 +88,9 @@ function DecisionDetail() {
                     <Tag>{ticket.category || 'uncategorized'}</Tag>
                 </div>
                 <h1 className="mt-7 text-[clamp(1.9rem,5vw,3.25rem)]">{ticket.subject}</h1>
+                <p className="mt-3 text-sm text-ink-faint">
+                    Submitted by {ticket.created_by_username || 'an unknown user'}
+                </p>
             </div>
 
             {error && <div className="mb-8"><ErrorNote>{error}</ErrorNote></div>}
@@ -135,6 +139,10 @@ function DecisionDetail() {
                     </Block>
                 </Panel>
             </div>
+
+            {alreadyDecided && decision.human_decision !== 'rejected' && (
+                <MessageThread ticketId={ticket.id} />
+            )}
 
             {!alreadyDecided && (
                 /* Decision island — floats over the content, never welded to the edge. */

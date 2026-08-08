@@ -1,16 +1,49 @@
 from django.contrib.auth.models import User
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
-from .models import Ticket, DecisionLog, UserProfile
+from .models import Ticket, DecisionLog, TicketMessage, UserProfile
 from .otp import send_otp_email
 
 
 class TicketSerializer(serializers.ModelSerializer):
+    resolution = serializers.SerializerMethodField()
+    created_by_username = serializers.SerializerMethodField()
+
     class Meta:
         model = Ticket
-        fields = ['id', 'subject', 'body', 'category',
-                  'urgency', 'status', 'created_at', 'updated_at']
+        fields = ['id', 'subject', 'body', 'category', 'urgency', 'status',
+                  'created_at', 'updated_at', 'resolution', 'created_by_username']
         read_only_fields = ['id', 'created_at', 'updated_at']
+
+    def get_created_by_username(self, obj):
+        return obj.created_by.username if obj.created_by else None
+
+    def get_resolution(self, obj):
+        """The customer-facing reply, once staff has approved or edited one.
+        None for a rejected decision — nothing was sent to the customer."""
+        decision = obj.decisions.filter(
+            human_decision__in=['approved', 'edited']).order_by('-decided_at').first()
+        if not decision:
+            return None
+        return {
+            'reply': decision.edited_action or decision.proposed_action,
+            'sources': decision.sources_used,
+            'decided_at': decision.decided_at,
+        }
+
+
+class TicketMessageSerializer(serializers.ModelSerializer):
+    sender_username = serializers.CharField(source='sender.username', read_only=True)
+    sender_role = serializers.SerializerMethodField()
+
+    class Meta:
+        model = TicketMessage
+        fields = ['id', 'sender_username', 'sender_role', 'body', 'created_at']
+        read_only_fields = ['id', 'sender_username', 'sender_role', 'created_at']
+
+    def get_sender_role(self, obj):
+        profile = getattr(obj.sender, 'profile', None)
+        return profile.role if profile else 'customer'
 
 
 class DecisionLogSerializer(serializers.ModelSerializer):

@@ -8,28 +8,52 @@ import { hairline, urgencyTone } from '../components/tokens'
 
 function TriageQueue() {
     const reduce = useReducedMotion()
+    const [showAll, setShowAll] = useState(false)
     const [decisions, setDecisions] = useState([])
     const [isLoading, setIsLoading] = useState(true)
     const [error, setError] = useState(null)
 
     useEffect(() => {
-        api.get('/decisions/?status=pending')
+        api.get(showAll ? '/decisions/' : '/decisions/?status=pending')
             .then(res => setDecisions(res.data.results || res.data))
             .catch(err => setError(err.message))
             .finally(() => setIsLoading(false))
-    }, [])
+    }, [showAll])
+
+    const setTab = value => {
+        setIsLoading(true)
+        setShowAll(value)
+    }
 
     if (isLoading) return <Loading label="Loading queue" />
     if (error) return <ErrorNote>{error}</ErrorNote>
 
     return (
         <div>
-            <div className="mb-14">
-                <Eyebrow>
-                    <span className="size-1 rounded-full bg-accent" />
-                    {decisions.length} awaiting review
-                </Eyebrow>
-                <h1 className="mt-6 text-[clamp(2.25rem,6vw,3.5rem)]">Triage queue</h1>
+            <div className="mb-14 flex flex-wrap items-end justify-between gap-6">
+                <div>
+                    <Eyebrow>
+                        <span className="size-1 rounded-full bg-accent" />
+                        {showAll ? `${decisions.length} total` : `${decisions.length} awaiting review`}
+                    </Eyebrow>
+                    <h1 className="mt-6 text-[clamp(2.25rem,6vw,3.5rem)]">Triage queue</h1>
+                </div>
+                <div className="flex gap-2">
+                    <button
+                        type="button"
+                        onClick={() => setTab(false)}
+                        className={`rounded-full px-4 py-2 text-sm transition-colors duration-500 ease-fluid ${!showAll ? 'bg-accent text-white' : 'bg-shell text-ink-dim ring-1 ring-inset ring-hairline/70'}`}
+                    >
+                        Pending
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => setTab(true)}
+                        className={`rounded-full px-4 py-2 text-sm transition-colors duration-500 ease-fluid ${showAll ? 'bg-accent text-white' : 'bg-shell text-ink-dim ring-1 ring-inset ring-hairline/70'}`}
+                    >
+                        All
+                    </button>
+                </div>
             </div>
 
             {decisions.length === 0 ? (
@@ -58,6 +82,11 @@ function TriageQueue() {
                                                 {decision.ticket.urgency || 'unset'}
                                             </Tag>
                                             <Tag>{decision.ticket.category || 'uncategorized'}</Tag>
+                                            {decision.human_decision && (
+                                                <Tag tone={decision.human_decision === 'rejected' ? 'danger' : 'success'}>
+                                                    {decision.human_decision}
+                                                </Tag>
+                                            )}
                                         </div>
                                         <p className="truncate text-sm text-ink-faint">{decision.proposed_action}</p>
                                     </div>

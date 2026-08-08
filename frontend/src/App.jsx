@@ -19,8 +19,8 @@ function App() {
         <Route path="/tickets" element={<ProtectedRoute roles={['customer']} redirectTo="/triage"><Layout><TicketList /></Layout></ProtectedRoute>} />
         <Route path="/tickets/new" element={<ProtectedRoute roles={['customer']} redirectTo="/triage"><Layout><NewTicket /></Layout></ProtectedRoute>} />
         <Route path="/tickets/:id" element={<ProtectedRoute roles={['customer']} redirectTo="/triage"><Layout><TicketDetail /></Layout></ProtectedRoute>} />
-        <Route path="/triage" element={<ProtectedRoute roles={['agent', 'admin']} redirectTo="/tickets"><Layout><TriageQueue /></Layout></ProtectedRoute>} />
-        <Route path="/triage/:id" element={<ProtectedRoute roles={['agent', 'admin']} redirectTo="/tickets"><Layout><DecisionDetail /></Layout></ProtectedRoute>} />
+        <Route path="/triage" element={<ProtectedRoute roles={['staff', 'admin']} redirectTo="/tickets"><Layout><TriageQueue /></Layout></ProtectedRoute>} />
+        <Route path="/triage/:id" element={<ProtectedRoute roles={['staff', 'admin']} redirectTo="/tickets"><Layout><DecisionDetail /></Layout></ProtectedRoute>} />
       </Routes>
     </BrowserRouter>
   )

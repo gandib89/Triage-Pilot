@@ -1,15 +1,16 @@
 from django.contrib.auth.models import User
+from django.db.models import Q
 from django.utils import timezone
 from rest_framework import viewsets, status, generics, permissions
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework_simplejwt.views import TokenObtainPairView
-from .models import Ticket, DecisionLog
+from .models import Ticket, DecisionLog, TicketMessage
 from .serializers import (
-    TicketSerializer, DecisionLogSerializer, DecisionLogDecideSerializer,
-    CustomTokenObtainPairSerializer, RegisterSerializer,
-    VerifyOTPSerializer, ResendOTPSerializer,
+    TicketSerializer, TicketMessageSerializer, DecisionLogSerializer,
+    DecisionLogDecideSerializer, CustomTokenObtainPairSerializer,
+    RegisterSerializer, VerifyOTPSerializer, ResendOTPSerializer,
 )
 from .agent import categorize_ticket
 from .otp import send_otp_email
@@ -128,6 +129,61 @@ class TicketViewSet(viewsets.ModelViewSet):
                 'error': str(e)
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+    @action(detail=True, methods=['get', 'post'])
+    def messages(self, request, pk=None):
+        """
+        GET  /api/tickets/{id}/messages/ — the follow-up thread.
+        POST /api/tickets/{id}/messages/ — add a follow-up message.
+        Visibility matches the ticket itself: its owner, or any staff account.
+        """
+        ticket = self.get_object()
+
+        if request.method == 'POST':
+            serializer = TicketMessageSerializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            message = TicketMessage.objects.create(
+                ticket=ticket, sender=request.user,
+                body=serializer.validated_data['body'])
+
+            # A follow-up hands the ticket back to the other side: a customer
+            # reply reopens it into the staff queue, a staff reply resolves
+            # it again.
+            profile = getattr(request.user, 'profile', None)
+            is_staff_sender = bool(profile and profile.is_staff_role)
+            if is_staff_sender and ticket.status == 'in_review':
+                ticket.status = 'approved'
+                ticket.save(update_fields=['status'])
+            elif not is_staff_sender and ticket.status == 'approved':
+                ticket.status = 'in_review'
+                ticket.save(update_fields=['status'])
+
+            return Response(
+                TicketMessageSerializer(message).data, status=status.HTTP_201_CREATED)
+
+        return Response(
+            TicketMessageSerializer(ticket.messages.all(), many=True).data)
+
+    @action(detail=True, methods=['post'])
+    def close(self, request, pk=None):
+        """
+        POST /api/tickets/{id}/close/
+        Lets the customer who submitted the ticket mark it closed. Staff
+        don't get this button — they use approve/reject on the decision.
+        """
+        ticket = self.get_object()
+        if ticket.created_by_id != request.user.id:
+            return Response(
+                {'detail': 'Only the ticket owner can close it.'},
+                status=status.HTTP_403_FORBIDDEN)
+        if ticket.status == 'closed':
+            return Response(
+                {'detail': 'Ticket is already closed.'},
+                status=status.HTTP_400_BAD_REQUEST)
+
+        ticket.status = 'closed'
+        ticket.save(update_fields=['status'])
+        return Response(TicketSerializer(ticket).data)
+
 
 class DecisionLogViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = DecisionLog.objects.select_related('ticket').all()
@@ -138,7 +194,10 @@ class DecisionLogViewSet(viewsets.ReadOnlyModelViewSet):
         queryset = super().get_queryset()
         status_param = self.request.query_params.get('status')
         if status_param == 'pending':
-            queryset = queryset.filter(human_decision__isnull=True)
+            # Never decided, or reopened by a customer follow-up after being
+            # decided — both need staff attention.
+            queryset = queryset.filter(
+                Q(human_decision__isnull=True) | Q(ticket__status='in_review'))
         return queryset
 
     @action(detail=True, methods=['post'])
