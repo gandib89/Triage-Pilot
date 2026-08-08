@@ -1,111 +1,90 @@
-:root {
-  --text: #6b6375;
-  --text-h: #08060d;
-  --bg: #fff;
-  --border: #e5e4e7;
-  --code-bg: #f4f3ec;
-  --accent: #aa3bff;
-  --accent-bg: rgba(170, 59, 255, 0.1);
-  --accent-border: rgba(170, 59, 255, 0.5);
-  --social-bg: rgba(244, 243, 236, 0.5);
-  --shadow:
-    rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
+@import "tailwindcss";
 
-  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --mono: ui-monospace, Consolas, monospace;
+@theme {
+  --font-sans: "Geist", system-ui, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, monospace;
 
-  font: 18px/145% var(--sans);
-  letter-spacing: 0.18px;
-  color-scheme: light dark;
-  color: var(--text);
-  background: var(--bg);
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  /* Surfaces */
+  --color-void: #FBFBFE;        /* page ground */
+  --color-shell: #F5F5F7;       /* subtle surface — outer tray, quoted blocks */
+  --color-core: #FFFFFF;        /* card surface */
+  --color-hairline: #D2D2D7;    /* borders & dividers */
 
-  @media (max-width: 1024px) {
-    font-size: 16px;
-  }
+  /* Type */
+  --color-ink: #1D1D1F;         /* primary */
+  --color-ink-dim: #6E6E73;     /* secondary / muted */
+  --color-ink-faint: #86868B;   /* tertiary — labels, timestamps */
+
+  /* Signal */
+  --color-accent: #0071E3;
+  --color-accent-hover: #0077ED;
+  /* Status hues, darkened from their iOS values so they clear 4.5:1 as text
+     on #FFFFFF — the tinted fills read the same at 10–18% opacity. */
+  --color-danger: #D70015;
+  --color-success: #1D7F3C;
+  --color-amber: #A65600;
+  --color-violet: #4F4DD4;
+
+  --radius-shell: 2rem;
+  --radius-core: 1.625rem;
+
+  --ease-fluid: cubic-bezier(0.32, 0.72, 0, 1);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --text: #9ca3af;
-    --text-h: #f3f4f6;
-    --bg: #16171d;
-    --border: #2e303a;
-    --code-bg: #1f2028;
-    --accent: #c084fc;
-    --accent-bg: rgba(192, 132, 252, 0.15);
-    --accent-border: rgba(192, 132, 252, 0.5);
-    --social-bg: rgba(47, 48, 58, 0.5);
-    --shadow:
-      rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
-  }
-
-  #social .button-icon {
-    filter: invert(1) brightness(2);
-  }
+html {
+  background: var(--color-void);
 }
 
 body {
   margin: 0;
+  min-height: 100dvh;
+  background: var(--color-void);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  font-weight: 400;
+  letter-spacing: -0.014em;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
-#root {
-  width: 1126px;
-  max-width: 100%;
-  margin: 0 auto;
-  text-align: center;
-  border-inline: 1px solid var(--border);
-  min-height: 100svh;
-  display: flex;
-  flex-direction: column;
-  box-sizing: border-box;
-}
-
-h1,
-h2 {
-  font-family: var(--heading);
+h1, h2, h3 {
+  letter-spacing: -0.038em;
+  line-height: 1.03;
   font-weight: 500;
-  color: var(--text-h);
 }
 
-h1 {
-  font-size: 56px;
-  letter-spacing: -1.68px;
-  margin: 32px 0;
-  @media (max-width: 1024px) {
-    font-size: 36px;
-    margin: 20px 0;
-  }
-}
-h2 {
-  font-size: 24px;
-  line-height: 118%;
-  letter-spacing: -0.24px;
-  margin: 0 0 8px;
-  @media (max-width: 1024px) {
-    font-size: 20px;
-  }
-}
-p {
-  margin: 0;
+::selection {
+  background: rgba(0, 113, 227, 0.16);
 }
 
-code,
-.counter {
-  font-family: var(--mono);
-  display: inline-flex;
-  border-radius: 4px;
-  color: var(--text-h);
+/* Fixed atmosphere: barely-there tinted wash. Painted once, never in a
+   scrolling container. */
+.atmosphere {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(60rem 40rem at 10% -12%, rgba(0, 113, 227, 0.07), transparent 62%),
+    radial-gradient(52rem 38rem at 90% 2%, rgba(94, 92, 230, 0.05), transparent 64%),
+    radial-gradient(70rem 48rem at 50% 110%, rgba(0, 113, 227, 0.035), transparent 66%);
 }
 
-code {
-  font-size: 15px;
-  line-height: 135%;
-  padding: 4px 8px;
-  background: var(--code-bg);
+/* Diffused ambient lift — no hard drop shadow, no gray outline. */
+.bevel {
+  box-shadow:
+    0 1px 2px rgba(29, 29, 31, 0.04),
+    0 12px 32px -18px rgba(29, 29, 31, 0.16);
+}
+
+/* Focus: a soft halo in accent, never a hard outline. */
+.field:focus {
+  border-color: rgba(0, 113, 227, 0.55);
+  box-shadow: 0 0 0 4px rgba(0, 113, 227, 0.12);
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-hairline) transparent;
 }

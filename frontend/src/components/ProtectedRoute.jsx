@@ -5,8 +5,9 @@ import { useState, useEffect } from "react";
 import api from "../api";
 
 
-function ProtectedRoute({ children }) {
+function ProtectedRoute({ children, roles, redirectTo = '/tickets' }) {
     const [isAuthorized, setIsAuthorized] = useState(null);
+    const [role, setRole] = useState(null);
 
     useEffect(() => {
         auth().catch(() => setIsAuthorized(false))
@@ -20,6 +21,7 @@ function ProtectedRoute({ children }) {
             });
             if (res.status === 200) {
                 localStorage.setItem(ACCESS_TOKEN, res.data.access)
+                setRole(jwtDecode(res.data.access).role || null)
                 setIsAuthorized(true)
             } else {
                 setIsAuthorized(false)
@@ -43,15 +45,28 @@ function ProtectedRoute({ children }) {
         if (tokenExpiration < now) {
             await refreshToken();
         } else {
+            setRole(decoded.role || null)
             setIsAuthorized(true);
         }
     };
 
     if (isAuthorized === null) {
-        return <div>Loading...</div>;
+        return (
+            <div className="flex min-h-[100dvh] items-center justify-center">
+                <span className="font-mono text-[11px] uppercase tracking-[0.2em] text-ink-faint">Authorizing</span>
+            </div>
+        );
     }
 
-    return isAuthorized ? children : <Navigate to="/login" />;
+    if (!isAuthorized) {
+        return <Navigate to="/login" />;
+    }
+
+    if (roles && !roles.includes(role)) {
+        return <Navigate to={redirectTo} />;
+    }
+
+    return children;
 }
 
 export default ProtectedRoute;

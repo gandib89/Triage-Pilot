@@ -1,0 +1,12 @@
+C:\Projects\Triage-Pilot\README.md
+C:\Projects\Triage-Pilot\docs\DAY4_CHECKLIST.md
+C:\Projects\Triage-Pilot\docs\DAY4_TEAM_SYNC.md
+C:\Projects\Triage-Pilot\docs\DAY4_TESTING_SUMMARY.md
+C:\Projects\Triage-Pilot\docs\PROMPT_TUNING_RESULTS.md
+C:\Projects\Triage-Pilot\docs\README.md
+C:\Projects\Triage-Pilot\frontend\README.md
+C:\Projects\Triage-Pilot\frontend\index.html
+C:\Projects\Triage-Pilot\triagepilot-project-description.md
+C:\Projects\Triage-Pilot\triagepilot-week-plan.md
+C:\Projects\Triage-Pilot\frontend\public\favicon.svg
+C:\Projects\Triage-Pilot\frontend\public\icons.svg

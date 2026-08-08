@@ -12,7 +12,7 @@ Out of the three options, a support-triage agent gives you the strongest recruit
 
 ## The Problem It Solves
 
-Support teams drown in incoming tickets that need to be read, categorized, prioritized, and either answered from existing documentation or escalated to the right person. Doing this by hand is slow and inconsistent. TriagePilot automates the *reasoning* part of that workflow — reading each ticket, deciding what it's about, checking whether the answer already exists in the knowledge base, drafting a response or an escalation — while keeping a human in control of every action the agent takes before it goes out.
+Support teams drown in incoming tickets that need to be read, categorized, prioritized, and either answered from existing documentation or escalated to the right person. Doing this by hand is slow and inconsistent. TriagePilot automates the _reasoning_ part of that workflow — reading each ticket, deciding what it's about, checking whether the answer already exists in the knowledge base, drafting a response or an escalation — while keeping a human in control of every action the agent takes before it goes out.
 
 The pitch in one line: **an agent that reads a ticket, thinks about what to do with it, and shows its work — a human approves, edits, or rejects before anything happens.**
 
@@ -29,13 +29,14 @@ At its core, TriagePilot is a pipeline with a reasoning agent in the middle:
 5. **Confirm** — nothing is sent or closed automatically. Every proposed action lands in a queue for a human to approve, edit, or reject.
 6. **Learn from the trail** — every decision, every piece of evidence the agent used, and every human override is logged, so the whole reasoning chain is inspectable after the fact.
 
-This is deliberately *not* a chatbot. The user-facing product is a triage queue, not a conversation window — which is a more enterprise-credible shape and avoids looking like every other "RAG chatbot" portfolio project out there.
+This is deliberately _not_ a chatbot. The user-facing product is a triage queue, not a conversation window — which is a more enterprise-credible shape and avoids looking like every other "RAG chatbot" portfolio project out there.
 
 ---
 
 ## Key Features
 
 ### Agent Intelligence
+
 - **Local LLM reasoning** — runs entirely on a locally-hosted model (e.g. via Ollama), no cloud inference cost or vendor dependency.
 - **Hand-built agent loop** — perceive → reason → act cycle written from scratch (no LangChain or similar), so you can speak fluently to exactly how it works in an interview.
 - **Tool use** — the agent calls real tools: a knowledge-base search (your RAG API), a ticket-history lookup, and a categorization function — not just free-text generation.
@@ -43,6 +44,7 @@ This is deliberately *not* a chatbot. The user-facing product is a triage queue,
 - **Reasoning trace** — the agent's intermediate steps (what it searched, what it found, why it chose an action) are captured and viewable, not just the final answer.
 
 ### The Triage Queue (React Dashboard)
+
 - **Live incoming-ticket feed** with category, urgency, and proposed-action badges at a glance.
 - **Side-by-side review panel** — original ticket on one side, agent's proposed response and cited sources on the other.
 - **One-click approve / edit / reject** on every proposed action, with edits feeding back into the audit trail.
@@ -50,29 +52,31 @@ This is deliberately *not* a chatbot. The user-facing product is a triage queue,
 - **Search and filter** across historical tickets by status, category, or resolution path.
 
 ### Trust & Audit
+
 - **Full decision log** — every ticket's full journey (ingested → reasoned → proposed → human decision → resolved) is stored and queryable.
 - **Human-in-the-loop by default** — the agent never sends anything or closes a ticket without explicit approval; this is a hard architectural constraint, not a toggle.
 - **Source citation** — any drafted reply that pulls from the knowledge base shows exactly which documents it used.
 - **Role-based access** — distinguish between agents who can approve/reject and admins who can see system-wide metrics.
 
 ### Integration & System Design
+
 - **Composes with your RAG project** — the knowledge-base API isn't rebuilt, it's called as an external tool, which is a real microservice-style integration story rather than a monolith.
-- **Metrics dashboard** — deflection rate (tickets resolved without human drafting), average time-to-resolution, and human-override rate, so you can talk about *impact*, not just features.
+- **Metrics dashboard** — deflection rate (tickets resolved without human drafting), average time-to-resolution, and human-override rate, so you can talk about _impact_, not just features.
 - **Deployed, not local-only** — live demo URL, seeded with realistic sample tickets so a recruiter can click around without setup.
 
 ---
 
 ## Tech Stack
 
-| Layer | Choice |
-|---|---|
-| Backend | Django + Django REST Framework |
-| Frontend | React |
-| Agent runtime | Local LLM via Ollama, hand-written agent loop (no framework) |
-| Knowledge retrieval | Your existing pgvector-backed RAG API, called as a tool |
-| Database | PostgreSQL |
-| Auth | JWT-based, role-based permissions |
-| Deployment | No AWS — self-hosted / free-tier friendly (e.g. Render, Railway, or a VPS), consistent with your local-first approach |
+| Layer               | Choice                                                                                                                |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| Backend             | Django + Django REST Framework                                                                                        |
+| Frontend            | React                                                                                                                 |
+| Agent runtime       | Local LLM via Ollama, hand-written agent loop (no framework)                                                          |
+| Knowledge retrieval | Your existing pgvector-backed RAG API, called as a tool                                                               |
+| Database            | PostgreSQL                                                                                                            |
+| Auth                | JWT-based, role-based permissions                                                                                     |
+| Deployment          | No AWS — self-hosted / free-tier friendly (e.g. Render, Railway, or a VPS), consistent with your local-first approach |
 
 ---
 
@@ -86,4 +90,4 @@ This is deliberately *not* a chatbot. The user-facing product is a triage queue,
 
 ---
 
-*Next step, if you want it: a full technical spec — data models, the agent-loop pseudocode, API endpoints, and a milestone-by-milestone build order.*
+_Next step, if you want it: a full technical spec — data models, the agent-loop pseudocode, API endpoints, and a milestone-by-milestone build order._

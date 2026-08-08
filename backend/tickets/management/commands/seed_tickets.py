@@ -1,5 +1,6 @@
 from django.core.management.base import BaseCommand
-from tickets.models import Ticket
+from tickets.models import Ticket, DecisionLog
+from tickets.agent import categorize_ticket
 
 
 class Command(BaseCommand):
@@ -72,7 +73,26 @@ class Command(BaseCommand):
         Ticket.objects.all().delete()  # Clear existing tickets
 
         for data in tickets_data:
-            Ticket.objects.create(**data)
+            ticket = Ticket.objects.create(**data)
+
+            try:
+                result = categorize_ticket(ticket)
+            except Exception as e:
+                self.stdout.write(self.style.WARNING(
+                    f'  Triage failed for "{ticket.subject}": {e}'))
+                continue
+
+            ticket.category = result['category']
+            ticket.urgency = result['urgency']
+            ticket.status = 'in_review'
+            ticket.save()
+
+            DecisionLog.objects.create(
+                ticket=ticket,
+                agent_reasoning=result['reasoning'],
+                proposed_action=result['drafted_response'] or result['escalation_reason'],
+                sources_used=result['sources_cited']
+            )
 
         self.stdout.write(self.style.SUCCESS(
             f'Successfully created {len(tickets_data)} sample tickets'))
