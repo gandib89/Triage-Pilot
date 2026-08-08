@@ -3,6 +3,7 @@ from django.db.models import Q
 from django.utils import timezone
 from rest_framework import viewsets, status, generics, permissions
 from rest_framework.decorators import action
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework_simplejwt.views import TokenObtainPairView
@@ -79,6 +80,13 @@ class TicketViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user)
 
+    def perform_destroy(self, instance):
+        """Only a closed ticket can be deleted — by its owner or by staff,
+        get_queryset above already limits which tickets each can reach."""
+        if instance.status != 'closed':
+            raise PermissionDenied('Only closed tickets can be deleted.')
+        instance.delete()
+
     @action(detail=True, methods=['post'])
     def triage(self, request, pk=None):
         """
@@ -139,6 +147,14 @@ class TicketViewSet(viewsets.ModelViewSet):
         ticket = self.get_object()
 
         if request.method == 'POST':
+            profile = getattr(request.user, 'profile', None)
+            is_staff_sender = bool(profile and profile.is_staff_role)
+
+            if not is_staff_sender and self._consecutive_customer_messages(ticket) >= 3:
+                return Response(
+                    {'detail': 'Please wait for a staff reply before sending more follow-ups.'},
+                    status=status.HTTP_429_TOO_MANY_REQUESTS)
+
             serializer = TicketMessageSerializer(data=request.data)
             serializer.is_valid(raise_exception=True)
             message = TicketMessage.objects.create(
@@ -148,8 +164,6 @@ class TicketViewSet(viewsets.ModelViewSet):
             # A follow-up hands the ticket back to the other side: a customer
             # reply reopens it into the staff queue, a staff reply resolves
             # it again.
-            profile = getattr(request.user, 'profile', None)
-            is_staff_sender = bool(profile and profile.is_staff_role)
             if is_staff_sender and ticket.status == 'in_review':
                 ticket.status = 'approved'
                 ticket.save(update_fields=['status'])
@@ -162,6 +176,18 @@ class TicketViewSet(viewsets.ModelViewSet):
 
         return Response(
             TicketMessageSerializer(ticket.messages.all(), many=True).data)
+
+    @staticmethod
+    def _consecutive_customer_messages(ticket):
+        """How many customer messages in a row sit at the end of the thread,
+        with no staff reply since. Caps follow-up spam before staff responds."""
+        count = 0
+        for message in ticket.messages.select_related('sender__profile').order_by('-created_at'):
+            sender_profile = getattr(message.sender, 'profile', None)
+            if sender_profile and sender_profile.is_staff_role:
+                break
+            count += 1
+        return count
 
     @action(detail=True, methods=['post'])
     def close(self, request, pk=None):

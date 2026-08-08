@@ -2,8 +2,20 @@ import { useState, useEffect, useRef } from 'react'
 import { Check, Send } from 'lucide-react'
 import dayjs from 'dayjs'
 import api from '../api'
+import { isStaff } from '../auth'
 import { Button, ErrorNote, Panel } from './ui'
 import { fieldClass } from './tokens'
+
+const FOLLOW_UP_LIMIT = 3
+
+function consecutiveCustomerMessages(messages) {
+    let count = 0
+    for (let i = messages.length - 1; i >= 0; i--) {
+        if (messages[i].sender_role !== 'customer') break
+        count++
+    }
+    return count
+}
 
 /** Follow-up thread on a ticket, shared by the customer and staff views. */
 function MessageThread({ ticketId }) {
@@ -35,11 +47,14 @@ function MessageThread({ ticketId }) {
             setJustSent(true)
             sentTimeout.current = setTimeout(() => setJustSent(false), 1500)
         } catch (err) {
-            setError(err.response?.data ? JSON.stringify(err.response.data) : err.message)
+            const data = err.response?.data
+            setError(data?.detail || (data ? JSON.stringify(data) : err.message))
         } finally {
             setIsSending(false)
         }
     }
+
+    const waitingForStaff = !isStaff() && consecutiveCustomerMessages(messages) >= FOLLOW_UP_LIMIT
 
     return (
         <Panel className="mt-4" innerClassName="flex flex-col gap-6 p-8 sm:p-10">
@@ -70,23 +85,29 @@ function MessageThread({ ticketId }) {
 
             {error && <ErrorNote>{error}</ErrorNote>}
 
-            <div className="flex items-end gap-3">
-                <textarea
-                    value={draft}
-                    onChange={e => setDraft(e.target.value)}
-                    placeholder="Write a follow-up…"
-                    rows={2}
-                    className={`${fieldClass} resize-none`}
-                />
-                <Button
-                    icon={justSent ? Check : Send}
-                    disabled={isSending || !draft.trim()}
-                    loading={isSending}
-                    onClick={send}
-                >
-                    {justSent ? 'Sent' : 'Send'}
-                </Button>
-            </div>
+            {waitingForStaff ? (
+                <p className="text-sm text-ink-faint">
+                    You've sent {FOLLOW_UP_LIMIT} follow-ups in a row — please wait for a staff reply before sending more.
+                </p>
+            ) : (
+                <div className="flex items-end gap-3">
+                    <textarea
+                        value={draft}
+                        onChange={e => setDraft(e.target.value)}
+                        placeholder="Write a follow-up…"
+                        rows={2}
+                        className={`${fieldClass} resize-none`}
+                    />
+                    <Button
+                        icon={justSent ? Check : Send}
+                        disabled={isSending || !draft.trim()}
+                        loading={isSending}
+                        onClick={send}
+                    >
+                        {justSent ? 'Sent' : 'Send'}
+                    </Button>
+                </div>
+            )}
         </Panel>
     )
 }
