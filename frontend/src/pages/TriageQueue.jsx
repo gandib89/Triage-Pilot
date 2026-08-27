@@ -1,10 +1,10 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import { motion, useReducedMotion } from 'framer-motion'
 import { ListChecks, ArrowUpRight } from 'lucide-react'
 import api from '../api'
 import { ErrorNote, Eyebrow, Loading, Panel, Tag } from '../components/ui'
-import { hairline, urgencyTone } from '../components/tokens'
+import { hairline, urgencyTone, triageState, triageTone } from '../components/tokens'
 
 function TriageQueue() {
     const reduce = useReducedMotion()
@@ -13,12 +13,22 @@ function TriageQueue() {
     const [isLoading, setIsLoading] = useState(true)
     const [error, setError] = useState(null)
 
+    const load = useCallback(() => api
+        .get(showAll ? '/decisions/' : '/decisions/?status=pending')
+        .then(res => setDecisions(res.data.results || res.data))
+        .catch(err => setError(err.message))
+        .finally(() => setIsLoading(false)), [showAll])
+
+    useEffect(() => { load() }, [load])
+
+    // Triage runs in the background, so rows land in the queue before the
+    // agent has filled them in. Poll only while something is still running.
+    const isRunning = decisions.some(d => triageState(d) === 'running')
     useEffect(() => {
-        api.get(showAll ? '/decisions/' : '/decisions/?status=pending')
-            .then(res => setDecisions(res.data.results || res.data))
-            .catch(err => setError(err.message))
-            .finally(() => setIsLoading(false))
-    }, [showAll])
+        if (!isRunning) return
+        const id = setInterval(load, 5000)
+        return () => clearInterval(id)
+    }, [isRunning, load])
 
     const setTab = value => {
         setIsLoading(true)
@@ -82,13 +92,22 @@ function TriageQueue() {
                                                 {decision.ticket.urgency || 'unset'}
                                             </Tag>
                                             <Tag>{decision.ticket.category || 'uncategorized'}</Tag>
+                                            {triageState(decision) !== 'ready' && (
+                                                <Tag tone={triageTone[triageState(decision)]}>
+                                                    {triageState(decision) === 'running' ? 'triaging' : 'triage failed'}
+                                                </Tag>
+                                            )}
                                             {decision.human_decision && (
                                                 <Tag tone={decision.human_decision === 'rejected' ? 'danger' : 'success'}>
                                                     {decision.human_decision}
                                                 </Tag>
                                             )}
                                         </div>
-                                        <p className="truncate text-sm text-ink-faint">{decision.proposed_action}</p>
+                                        <p className="truncate text-sm text-ink-faint">
+                                            {decision.proposed_action
+                                                || decision.triage_error
+                                                || 'Agent is working on this ticket…'}
+                                        </p>
                                     </div>
                                     <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-shell text-ink-dim transition-transform duration-500 ease-fluid group-hover:translate-x-0.5 group-hover:-translate-y-px group-hover:scale-105">
                                         <ArrowUpRight size={14} {...hairline} />

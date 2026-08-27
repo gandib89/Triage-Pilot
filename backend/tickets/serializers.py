@@ -53,7 +53,7 @@ class DecisionLogSerializer(serializers.ModelSerializer):
         model = DecisionLog
         fields = ['id', 'ticket', 'agent_reasoning', 'proposed_action',
                   'human_decision', 'sources_used', 'edited_action',
-                  'decided_at', 'created_at']
+                  'triage_error', 'decided_at', 'created_at']
         read_only_fields = fields
 
 

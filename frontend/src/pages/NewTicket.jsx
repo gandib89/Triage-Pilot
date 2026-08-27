@@ -9,33 +9,21 @@ function NewTicket() {
     const [subject, setSubject] = useState('')
     const [body, setBody] = useState('')
     const [error, setError] = useState(null)
-    const [stage, setStage] = useState(null) // null | 'submitting' | 'triaging'
+    const [isSubmitting, setIsSubmitting] = useState(false)
     const navigate = useNavigate()
 
-    const isSubmitting = stage !== null
-
+    // Triage is kicked off server-side on create and runs in the background,
+    // so submitting is one request and the customer never waits on the agent.
     const handleSubmit = async (e) => {
         e.preventDefault()
         setError(null)
-        setStage('submitting')
-
-        let ticket
+        setIsSubmitting(true)
         try {
             const res = await api.post('/tickets/', { subject, body })
-            ticket = res.data
+            navigate(`/tickets/${res.data.id}`)
         } catch (err) {
             setError(err.response?.data ? JSON.stringify(err.response.data) : err.message)
-            setStage(null)
-            return
-        }
-
-        setStage('triaging')
-        try {
-            const res = await api.post(`/tickets/${ticket.id}/triage/`)
-            navigate(`/triage/${res.data.decision_log_id}`)
-        } catch {
-            // Ticket was created even if triage failed - send them to it directly.
-            navigate(`/tickets/${ticket.id}`)
+            setIsSubmitting(false)
         }
     }
 
@@ -91,7 +79,7 @@ function NewTicket() {
                             disabled={isSubmitting}
                             className="mt-1 self-start"
                         >
-                            {stage === 'triaging' ? 'Running triage' : stage === 'submitting' ? 'Submitting' : 'Submit ticket'}
+                            {isSubmitting ? 'Submitting' : 'Submit ticket'}
                         </Button>
                     </form>
                 </Panel>

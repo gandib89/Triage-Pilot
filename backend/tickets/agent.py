@@ -3,9 +3,14 @@ AI Agent service for ticket categorization.
 Uses local LLM via Ollama to analyze support tickets.
 """
 import json
+import logging
+import threading
 import ollama
 from typing import Dict, Any
+from django.db import connection
 from .knowledge_base import search_knowledge_base
+
+logger = logging.getLogger(__name__)
 
 
 def build_prompt(ticket) -> str:
@@ -243,3 +248,64 @@ def categorize_ticket(ticket) -> dict:
         'sources_cited': decision['sources_cited'],
         'kb_articles_found': len(kb_articles),
     }
+
+
+def apply_triage(ticket, decision) -> dict:
+    """
+    Run the agent over `ticket` and write the outcome onto both the ticket and
+    its existing `decision` row.
+
+    The DecisionLog is created up front by the caller, not here, because the
+    staff triage queue is a list of DecisionLogs — if the row only appeared on
+    success, a failed or interrupted run would leave the ticket invisible to
+    staff with nothing to retry.
+    """
+    try:
+        result = categorize_ticket(ticket)
+    except Exception as exc:
+        decision.triage_error = str(exc) or exc.__class__.__name__
+        decision.save(update_fields=['triage_error'])
+        raise
+
+    ticket.category = result['category']
+    ticket.urgency = result['urgency']
+    ticket.status = 'in_review'
+    ticket.save()
+
+    decision.agent_reasoning = result['reasoning']
+    decision.proposed_action = (
+        result['drafted_response'] or result['escalation_reason'])
+    decision.sources_used = result['sources_cited']
+    decision.triage_error = ''
+    decision.save(update_fields=[
+        'agent_reasoning', 'proposed_action', 'sources_used', 'triage_error'])
+    return result
+
+
+def triage_in_background(ticket_id: int, decision_id: int) -> None:
+    """
+    Kick off triage without blocking the request that created the ticket.
+
+    ponytail: a daemon thread, not a task queue. Inference takes tens of
+    seconds, which is longer than a gunicorn worker timeout, and a thread is
+    the whole of what's needed to get it off the request. The ceiling: if the
+    process dies mid-run the decision stays in the "running" state until a
+    human hits retry. Move to Celery/RQ if that stops being acceptable.
+    """
+    # Imported here so the module keeps importing cleanly before app registry
+    # setup; the thread body is the only part that touches the ORM.
+    from .models import Ticket, DecisionLog
+
+    def run():
+        try:
+            apply_triage(
+                Ticket.objects.get(pk=ticket_id),
+                DecisionLog.objects.get(pk=decision_id),
+            )
+        except Exception:
+            logger.exception("Background triage failed for ticket %s", ticket_id)
+        finally:
+            # Each thread gets its own connection; without this it leaks.
+            connection.close()
+
+    threading.Thread(target=run, daemon=True).start()

@@ -11,3 +11,11 @@ export const fieldClass =
      placeholder:text-ink-faint`
 
 export const urgencyTone = { critical: 'danger', high: 'danger', medium: 'amber', low: 'neutral' }
+
+// A DecisionLog row is created the moment a ticket is submitted, then filled
+// in by the agent in the background — so a row in the queue is in one of
+// three states, and only 'ready' can be acted on.
+export const triageState = d =>
+    d.triage_error ? 'failed' : d.proposed_action ? 'ready' : 'running'
+
+export const triageTone = { failed: 'danger', running: 'amber', ready: 'neutral' }

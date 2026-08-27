@@ -13,7 +13,7 @@ from .serializers import (
     DecisionLogDecideSerializer, CustomTokenObtainPairSerializer,
     RegisterSerializer, VerifyOTPSerializer, ResendOTPSerializer,
 )
-from .agent import categorize_ticket
+from .agent import apply_triage, triage_in_background
 from .otp import send_otp_email
 
 
@@ -78,7 +78,13 @@ class TicketViewSet(viewsets.ModelViewSet):
         return queryset.filter(created_by=self.request.user)
 
     def perform_create(self, serializer):
-        serializer.save(created_by=self.request.user)
+        ticket = serializer.save(created_by=self.request.user)
+        # The staff queue lists DecisionLogs, so the row has to exist before
+        # the agent runs — otherwise a slow or failing triage leaves this
+        # ticket invisible to staff. Triage fills the row in from a thread.
+        decision = DecisionLog.objects.create(
+            ticket=ticket, agent_reasoning='', proposed_action='')
+        triage_in_background(ticket.pk, decision.pk)
 
     def perform_destroy(self, instance):
         """Only a closed ticket can be deleted — by its owner or by staff,
@@ -91,51 +97,46 @@ class TicketViewSet(viewsets.ModelViewSet):
     def triage(self, request, pk=None):
         """
         POST /api/tickets/{id}/triage/
-        Triggers AI agent to categorize the ticket.
+        Re-runs the agent over a ticket whose triage failed or never finished.
+        The first run is kicked off automatically on create, so this is the
+        retry path, not the normal one.
         """
         ticket = self.get_object()
+        decision = ticket.decisions.order_by('-created_at').first()
+
+        if decision is None:
+            decision = DecisionLog.objects.create(
+                ticket=ticket, agent_reasoning='', proposed_action='')
+        elif decision.human_decision:
+            return Response(
+                {'success': False,
+                 'error': 'This ticket has already been decided by a human.'},
+                status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            # Call the agent
-            result = categorize_ticket(ticket)
-
-            # Update ticket with agent's categorization
-            ticket.category = result['category']
-            ticket.urgency = result['urgency']
-            ticket.status = 'in_review'
-            ticket.save()
-
-            # Create decision log
-
-            decision_log = DecisionLog.objects.create(
-                ticket=ticket,
-                agent_reasoning=result['reasoning'],
-                proposed_action=result['drafted_response'] or result['escalation_reason'],
-                sources_used=result['sources_cited']
-            )
-
-            # Return success response
-            return Response({
-                'success': True,
-                'ticket_id': ticket.id,
-                'category': result['category'],
-                'urgency': result['urgency'],
-                'confidence': result['confidence'],
-                'reasoning': result['reasoning'],
-                'action': result['action'],
-                'drafted_response': result['drafted_response'],
-                'escalation_reason': result['escalation_reason'],
-                'sources_cited': result['sources_cited'],
-                'kb_articles_found': result['kb_articles_found'],
-                'decision_log_id': decision_log.id,
-                'status': ticket.status
-            }, status=status.HTTP_200_OK)
-
+            result = apply_triage(ticket, decision)
         except Exception as e:
             return Response({
                 'success': False,
-                'error': str(e)
+                'error': str(e),
+                'decision_log_id': decision.id,
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        return Response({
+            'success': True,
+            'ticket_id': ticket.id,
+            'category': result['category'],
+            'urgency': result['urgency'],
+            'confidence': result['confidence'],
+            'reasoning': result['reasoning'],
+            'action': result['action'],
+            'drafted_response': result['drafted_response'],
+            'escalation_reason': result['escalation_reason'],
+            'sources_cited': result['sources_cited'],
+            'kb_articles_found': result['kb_articles_found'],
+            'decision_log_id': decision.id,
+            'status': ticket.status
+        }, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=['get', 'post'])
     def messages(self, request, pk=None):

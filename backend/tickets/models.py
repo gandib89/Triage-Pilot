@@ -238,6 +238,15 @@ class DecisionLog(models.Model):
         blank=True,
         help_text="Human-edited version of the proposed action, if edited"
     )
+    triage_error = models.TextField(
+        blank=True,
+        default='',
+        help_text=(
+            "Why the agent run failed, if it did. Empty and no proposed_action "
+            "means triage is still running; empty with a proposed_action means "
+            "the row is ready for a human."
+        )
+    )
     decided_at = models.DateTimeField(
         null=True,
         blank=True,

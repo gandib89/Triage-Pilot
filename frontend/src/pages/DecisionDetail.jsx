@@ -1,9 +1,9 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
-import { Check, Pencil, X, ArrowLeft, FileText, Trash2 } from 'lucide-react'
+import { Check, Pencil, X, ArrowLeft, FileText, Trash2, RotateCw } from 'lucide-react'
 import api from '../api'
 import { Button, ErrorNote, Eyebrow, Loading, Panel, Tag } from '../components/ui'
-import { fieldClass, hairline, urgencyTone } from '../components/tokens'
+import { fieldClass, hairline, urgencyTone, triageState } from '../components/tokens'
 import MessageThread from '../components/MessageThread'
 
 function Block({ label, children, className = '' }) {
@@ -33,16 +33,42 @@ function DecisionDetail() {
     const [editedText, setEditedText] = useState('')
     const [isSubmitting, setIsSubmitting] = useState(false)
     const [isDeleting, setIsDeleting] = useState(false)
+    const [isRetrying, setIsRetrying] = useState(false)
 
+    const load = useCallback(() => api
+        .get(`/decisions/${id}/`)
+        .then(res => {
+            setDecision(res.data)
+            setEditedText(res.data.proposed_action)
+        })
+        .catch(err => setError(err.message))
+        .finally(() => setIsLoading(false)), [id])
+
+    useEffect(() => { load() }, [load])
+
+    // The agent may still be running when staff open the row — poll until it
+    // has either produced a proposal or recorded why it failed.
+    const state = decision ? triageState(decision) : null
     useEffect(() => {
-        api.get(`/decisions/${id}/`)
-            .then(res => {
-                setDecision(res.data)
-                setEditedText(res.data.proposed_action)
-            })
-            .catch(err => setError(err.message))
-            .finally(() => setIsLoading(false))
-    }, [id])
+        if (state !== 'running') return
+        const timer = setInterval(load, 5000)
+        return () => clearInterval(timer)
+    }, [state, load])
+
+    const retryTriage = async () => {
+        setIsRetrying(true)
+        setError(null)
+        try {
+            // Synchronous on purpose: an explicit retry should report its own
+            // outcome rather than hand back another row to watch.
+            await api.post(`/tickets/${decision.ticket.id}/triage/`)
+            await load()
+        } catch (err) {
+            setError(err.response?.data?.error || err.message)
+        } finally {
+            setIsRetrying(false)
+        }
+    }
 
     const submitDecision = async (decisionType) => {
         setIsSubmitting(true)
@@ -136,28 +162,55 @@ function DecisionDetail() {
                                 ))}
                             </ul>
                         ) : (
-                            <p className="text-sm text-ink-faint">No sources cited — the agent escalated instead.</p>
+                            <p className="text-sm text-ink-faint">
+                                {state === 'ready'
+                                    ? 'No sources cited — the agent escalated instead.'
+                                    : 'Nothing cited yet.'}
+                            </p>
                         )}
                     </Block>
                 </Panel>
 
                 <Panel className="md:col-span-7" innerClassName="flex h-full flex-col gap-8 p-8 sm:p-9">
-                    <Block label="Agent reasoning">
-                        <Quote>{decision.agent_reasoning}</Quote>
-                    </Block>
+                    {state === 'ready' ? (
+                        <>
+                            <Block label="Agent reasoning">
+                                <Quote>{decision.agent_reasoning}</Quote>
+                            </Block>
 
-                    <Block label={isEditing ? 'Proposed action — editing' : 'Proposed action'}>
-                        {isEditing ? (
-                            <textarea
-                                value={editedText}
-                                onChange={e => setEditedText(e.target.value)}
-                                rows={10}
-                                className={`${fieldClass} resize-y p-5 leading-relaxed`}
-                            />
-                        ) : (
-                            <Quote>{decision.edited_action || decision.proposed_action}</Quote>
-                        )}
-                    </Block>
+                            <Block label={isEditing ? 'Proposed action — editing' : 'Proposed action'}>
+                                {isEditing ? (
+                                    <textarea
+                                        value={editedText}
+                                        onChange={e => setEditedText(e.target.value)}
+                                        rows={10}
+                                        className={`${fieldClass} resize-y p-5 leading-relaxed`}
+                                    />
+                                ) : (
+                                    <Quote>{decision.edited_action || decision.proposed_action}</Quote>
+                                )}
+                            </Block>
+                        </>
+                    ) : (
+                        <Block label={state === 'running' ? 'Triage in progress' : 'Triage failed'}>
+                            <Quote>
+                                {state === 'running'
+                                    ? 'The agent is reading this ticket and searching the knowledge base. This page updates itself when it finishes.'
+                                    : decision.triage_error}
+                            </Quote>
+                            {/* Offered while running too: a row whose worker died
+                                would otherwise poll forever with no way out. */}
+                            <Button
+                                icon={RotateCw}
+                                className="mt-5"
+                                disabled={isRetrying}
+                                loading={isRetrying}
+                                onClick={retryTriage}
+                            >
+                                {isRetrying ? 'Running triage' : 'Run triage now'}
+                            </Button>
+                        </Block>
+                    )}
                 </Panel>
             </div>
 
@@ -165,7 +218,7 @@ function DecisionDetail() {
                 <MessageThread ticketId={ticket.id} />
             )}
 
-            {!alreadyDecided && (
+            {!alreadyDecided && state === 'ready' && (
                 /* Decision island — floats over the content, never welded to the edge. */
                 <div className="pointer-events-none fixed inset-x-0 bottom-0 z-20 flex justify-center px-4 pb-6">
                     <div className="pointer-events-auto flex flex-wrap items-center justify-center gap-2 rounded-full bg-core/75 p-2 ring-1 ring-inset ring-hairline/70 backdrop-blur-2xl">
