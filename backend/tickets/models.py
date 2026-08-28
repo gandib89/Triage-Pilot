@@ -1,8 +1,10 @@
 import random
+import uuid
 from datetime import timedelta
 from django.db import models
 from django.contrib.auth.models import User
 from django.utils import timezone
+from rest_framework_simplejwt.token_blacklist.models import OutstandingToken
 
 OTP_LIFETIME = timedelta(minutes=10)
 OTP_RESEND_COOLDOWN = timedelta(seconds=60)
@@ -205,6 +207,25 @@ class UserProfile(models.Model):
     class Meta:
         verbose_name = 'User Profile'
         verbose_name_plural = 'User Profiles'
+
+
+class TokenFamily(models.Model):
+    """
+    Links a SimpleJWT OutstandingToken to the login session it descends from.
+
+    `family_id` is generated once at login and carried forward onto each
+    OutstandingToken created by a refresh-token rotation. If a refresh token
+    is replayed after already being rotated (SimpleJWT's blacklist catches
+    that on its own), every OutstandingToken sharing its family_id gets
+    blacklisted too, not just the replayed one — see
+    CookieTokenRefreshSerializer._revoke_family in tickets/serializers.py.
+    """
+    outstanding_token = models.OneToOneField(
+        OutstandingToken, on_delete=models.CASCADE, related_name='family')
+    family_id = models.UUIDField(default=uuid.uuid4, db_index=True)
+
+    def __str__(self) -> str:
+        return f"Family {self.family_id} ({self.outstanding_token.jti})"
 
 
 class DecisionLog(models.Model):

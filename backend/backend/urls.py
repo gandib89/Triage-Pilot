@@ -18,13 +18,16 @@ from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
 from django.urls import path, include
-from rest_framework_simplejwt.views import TokenRefreshView
-from tickets.views import CustomTokenObtainPairView, RegisterView, VerifyOTPView, ResendOTPView
+from tickets.views import (
+    CustomTokenObtainPairView, CookieTokenRefreshView, LogoutView,
+    RegisterView, VerifyOTPView, ResendOTPView,
+)
 
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/token/', CustomTokenObtainPairView.as_view(), name='token_obtain_pair'),
-    path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+    path('api/token/refresh/', CookieTokenRefreshView.as_view(), name='token_refresh'),
+    path('api/logout/', LogoutView.as_view(), name='logout'),
     path('api/register/', RegisterView.as_view(), name='register'),
     path('api/verify-otp/', VerifyOTPView.as_view(), name='verify_otp'),
     path('api/resend-otp/', ResendOTPView.as_view(), name='resend_otp'),

@@ -3,8 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { jwtDecode } from 'jwt-decode'
 import { ArrowUpRight } from 'lucide-react'
 import api from '../api'
-import { ACCESS_TOKEN, REFRESH_TOKEN } from '../constants'
-import { STAFF_ROLES } from '../auth'
+import { STAFF_ROLES, setAccessToken } from '../auth'
 import PageFade from '../components/PageFade'
 import { Mark } from '../components/Layout'
 import { Button, ErrorNote, Eyebrow, Field, Panel } from '../components/ui'
@@ -40,8 +39,7 @@ function Login() {
         try {
             const res = await api.post('/token/', { username, password })
             const role = jwtDecode(res.data.access).role || 'customer'
-            localStorage.setItem(ACCESS_TOKEN, res.data.access)
-            localStorage.setItem(REFRESH_TOKEN, res.data.refresh)
+            setAccessToken(res.data.access)
             navigate(STAFF_ROLES.includes(role) ? '/triage' : '/tickets')
         } catch (err) {
             const code = err.response?.data?.code?.[0]

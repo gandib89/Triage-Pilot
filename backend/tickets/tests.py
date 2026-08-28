@@ -79,3 +79,69 @@ class TriageVisibilityTests(TestCase):
         self.assertEqual(decision.triage_error, '')
         ticket.refresh_from_db()
         self.assertEqual(ticket.status, 'in_review')
+
+
+class RefreshTokenSecurityTests(TestCase):
+    """
+    Covers the cookie-transport + reuse-detection hardening: the refresh
+    token never appears in a JSON body, and replaying an already-rotated one
+    kills every token descended from that login, not just the replayed jti.
+    """
+
+    def setUp(self):
+        self.user = User.objects.create_user('cust2', password='pw12345')
+        self.client = APIClient()
+
+    def login(self):
+        res = self.client.post(
+            '/api/token/', {'username': 'cust2', 'password': 'pw12345'})
+        self.assertEqual(res.status_code, 200)
+        return res
+
+    def test_login_returns_access_only_and_sets_httponly_cookie(self):
+        res = self.login()
+        self.assertIn('access', res.data)
+        self.assertNotIn('refresh', res.data)
+        cookie = res.cookies.get('refresh_token')
+        self.assertIsNotNone(cookie)
+        self.assertTrue(cookie['httponly'])
+
+    def test_refresh_rotates_cookie_and_returns_new_access(self):
+        first = self.login()
+        res = self.client.post('/api/token/refresh/')
+        self.assertEqual(res.status_code, 200)
+        self.assertNotEqual(res.data['access'], first.data['access'])
+        self.assertNotIn('refresh', res.data)
+
+    def test_missing_refresh_cookie_is_401_with_detail_shape(self):
+        res = self.client.post('/api/token/refresh/')
+        self.assertEqual(res.status_code, 401)
+        self.assertIn('detail', res.data)
+
+    def test_replayed_refresh_token_revokes_the_whole_family(self):
+        self.login()
+        stolen = self.client.cookies['refresh_token'].value
+
+        legit = self.client.post('/api/token/refresh/')
+        self.assertEqual(legit.status_code, 200)
+        rotated = self.client.cookies['refresh_token'].value
+
+        # Attacker replays the pre-rotation token.
+        self.client.cookies['refresh_token'] = stolen
+        replay = self.client.post('/api/token/refresh/')
+        self.assertEqual(replay.status_code, 401)
+
+        # The legitimate holder's already-rotated token is dead too, since
+        # the server can't tell attacker and victim apart once this happens.
+        self.client.cookies['refresh_token'] = rotated
+        after = self.client.post('/api/token/refresh/')
+        self.assertEqual(after.status_code, 401)
+
+    def test_logout_blacklists_refresh_and_clears_cookie(self):
+        self.login()
+        res = self.client.post('/api/logout/')
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.cookies['refresh_token'].value, '')
+
+        again = self.client.post('/api/token/refresh/')
+        self.assertEqual(again.status_code, 401)

@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.contrib.auth.models import User
 from django.db.models import Q
 from django.utils import timezone
@@ -5,16 +6,35 @@ from rest_framework import viewsets, status, generics, permissions
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
+from rest_framework.views import APIView
 from rest_framework.permissions import AllowAny, IsAuthenticated
-from rest_framework_simplejwt.views import TokenObtainPairView
+from rest_framework_simplejwt.exceptions import TokenError
+from rest_framework_simplejwt.settings import api_settings as jwt_settings
+from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from .models import Ticket, DecisionLog, TicketMessage
 from .serializers import (
     TicketSerializer, TicketMessageSerializer, DecisionLogSerializer,
     DecisionLogDecideSerializer, CustomTokenObtainPairSerializer,
+    CookieTokenRefreshSerializer,
     RegisterSerializer, VerifyOTPSerializer, ResendOTPSerializer,
 )
 from .agent import apply_triage, triage_in_background
 from .otp import send_otp_email
+from .throttles import LoginRateThrottle, RegisterRateThrottle
+
+
+def _set_refresh_cookie(response, refresh_str):
+    response.set_cookie(
+        settings.REFRESH_TOKEN_COOKIE_NAME, refresh_str,
+        max_age=int(jwt_settings.REFRESH_TOKEN_LIFETIME.total_seconds()),
+        httponly=True, secure=settings.REFRESH_TOKEN_COOKIE_SECURE,
+        samesite='Strict', path=settings.REFRESH_TOKEN_COOKIE_PATH,
+    )
+
+
+def _clear_refresh_cookie(response):
+    response.delete_cookie(settings.REFRESH_TOKEN_COOKIE_NAME, path=settings.REFRESH_TOKEN_COOKIE_PATH)
 
 
 class IsSupportStaff(permissions.BasePermission):
@@ -29,7 +49,52 @@ class IsSupportStaff(permissions.BasePermission):
 
 
 class CustomTokenObtainPairView(TokenObtainPairView):
+    """Same login flow as SimpleJWT's view, but the refresh token is moved
+    out of the response body into an httpOnly cookie before it reaches the
+    client — the access token is the only thing the SPA ever sees."""
     serializer_class = CustomTokenObtainPairSerializer
+    throttle_classes = [LoginRateThrottle]
+
+    def post(self, request, *args, **kwargs):
+        response = super().post(request, *args, **kwargs)
+        refresh = response.data.pop('refresh', None)
+        if refresh:
+            _set_refresh_cookie(response, refresh)
+        return response
+
+
+class CookieTokenRefreshView(TokenRefreshView):
+    """POST /api/token/refresh/ — refresh token comes from the httpOnly
+    cookie, not the body. See CookieTokenRefreshSerializer for the
+    reuse-family revocation this adds on top of SimpleJWT's rotation."""
+    serializer_class = CookieTokenRefreshSerializer
+
+    def post(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data={}, context={'request': request})
+        serializer.is_valid(raise_exception=True)
+        response = Response({'access': serializer.validated_data['access']},
+                             status=status.HTTP_200_OK)
+        if 'refresh' in serializer.validated_data:
+            _set_refresh_cookie(response, serializer.validated_data['refresh'])
+        return response
+
+
+class LogoutView(APIView):
+    """POST /api/logout/ — blacklists the current refresh token and clears
+    its cookie. No-op (still 200) if there's no cookie to act on, so a
+    double logout or an already-expired session isn't an error."""
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        raw_token = request.COOKIES.get(settings.REFRESH_TOKEN_COOKIE_NAME)
+        if raw_token:
+            try:
+                RefreshToken(raw_token).blacklist()
+            except TokenError:
+                pass
+        response = Response({'detail': 'Logged out.'}, status=status.HTTP_200_OK)
+        _clear_refresh_cookie(response)
+        return response
 
 
 class RegisterView(generics.CreateAPIView):
@@ -37,6 +102,7 @@ class RegisterView(generics.CreateAPIView):
     queryset = User.objects.all()
     serializer_class = RegisterSerializer
     permission_classes = [AllowAny]
+    throttle_classes = [RegisterRateThrottle]
 
 
 class VerifyOTPView(generics.GenericAPIView):

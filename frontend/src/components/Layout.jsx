@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { Inbox, ListChecks, LogOut } from 'lucide-react'
-import { ACCESS_TOKEN, REFRESH_TOKEN } from '../constants'
-import { isStaff } from '../auth'
+import api from '../api'
+import { isStaff, setAccessToken } from '../auth'
 import PageFade from './PageFade'
 import { hairline } from './tokens'
 
@@ -44,9 +44,13 @@ function Layout({ children }) {
     const staff = isStaff()
     const homePath = staff ? '/triage' : '/tickets'
 
-    const handleLogout = () => {
-        localStorage.removeItem(ACCESS_TOKEN)
-        localStorage.removeItem(REFRESH_TOKEN)
+    const handleLogout = async () => {
+        try {
+            await api.post('/logout/')
+        } catch {
+            // Session's dead either way — still clear client state and leave.
+        }
+        setAccessToken(null)
         navigate('/login')
     }
 

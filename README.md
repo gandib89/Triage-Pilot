@@ -169,17 +169,19 @@ A resolved ticket keeps a lightweight message thread (`TicketMessage`) — it do
 ## Authentication & Security
 
 - **Registration** (`POST /api/register/`) always creates a `customer` account — there's no way to self-register as staff. It creates the `User` immediately (unverified) and emails a 6-digit OTP.
-- **Password hashing**: Django's built-in `PBKDF2` hasher via `django.contrib.auth`, with the standard Django validators (similarity, minimum length, common-password, all-numeric) enforced on registration.
+- **Password hashing**: Argon2id (`tickets.hashers.TriagePilotArgon2PasswordHasher`, `argon2-cffi`) is first in `PASSWORD_HASHERS`, so every new or changed password hashes there; Django's `PBKDF2` hasher stays listed after it so existing users' hashes keep verifying until they next change password. The standard Django validators (similarity, minimum length, common-password, all-numeric) still apply on registration.
 - **Email OTP verification**: `POST /api/verify-otp/` checks the code against a 10-minute expiry window; `POST /api/resend-otp/` reissues one, gated by a 60-second cooldown tracked per-user (`otp_last_sent_at`).
 - **Sign-in is blocked pre-verification**: `CustomTokenObtainPairSerializer` raises a validation error with `code: "email_not_verified"` if `profile.email_verified` is false, even with correct credentials.
-- **JWT via SimpleJWT**: access tokens live 1 hour, refresh tokens 7 days, with `ROTATE_REFRESH_TOKENS` and `BLACKLIST_AFTER_ROTATION` on — a used refresh token can't be replayed. The custom serializer embeds `role` in the access token so the frontend can route without an extra API call.
-- **Storage**: the SPA keeps tokens in `localStorage` (not HttpOnly cookies) and attaches `Authorization: Bearer <token>` via an axios interceptor, explicitly skipping that header on the public auth endpoints so an expired stale token can't turn a login attempt into a spurious 401.
+- **JWT via SimpleJWT**: access tokens live 1 hour, refresh tokens 7 days, with `ROTATE_REFRESH_TOKENS` and `BLACKLIST_AFTER_ROTATION` on. The custom serializer embeds `role` in the access token so the frontend can route without an extra API call.
+- **Refresh token reuse detection**: rotation + one-shot use is SimpleJWT's blacklist doing its job; `TokenFamily` (`tickets/models.py`) links every `OutstandingToken` to the `family_id` it was issued under at login. If a refresh token is replayed after already being rotated — `CookieTokenRefreshSerializer` sees its jti already blacklisted — every `OutstandingToken` sharing that family gets blacklisted too, not just the replayed one, since the server can no longer tell the legitimate holder from whoever replayed it.
+- **Storage**: the refresh token lives in an httpOnly, `SameSite=Strict` cookie scoped to the `/api/token/` path (`secure` in production, off under `DEBUG` for local http) — never reachable from JS. The access token lives only in memory on the client (`frontend/src/auth.js`'s external store, read by React via `useSyncExternalStore` and by the axios interceptor directly) — never `localStorage`. A page reload loses it by design; `ProtectedRoute` recovers it with a silent `POST /api/token/refresh/` against the cookie, and the axios response interceptor does the same on a live 401.
 - **Authorization**: `IsSupportStaff` / `IsAgent` / `IsAdmin` DRF permission classes gate staff-only endpoints; `TicketViewSet.get_queryset` additionally scopes customers to their own tickets at the ORM level, so role checks aren't just a UI concern.
 - **CORS**: `django-cors-headers`, allowlisting `http://localhost:5173` with credentials enabled — a single, explicit dev origin, not a wildcard.
-- **Rate limiting**: applies to one path — the follow-up message thread (3 consecutive customer messages before a staff reply is required). There is no general API rate limiting.
+- **Rate limiting**: `/api/token/` and `/api/register/` carry DRF `AnonRateThrottle` scopes (`login`: 5/min, `register`: 3/min) to blunt credential stuffing and mass signup, distinct from the follow-up-message thread's own limit (3 consecutive customer messages before a staff reply is required).
 - **Input validation**: DRF serializers validate all write paths (registration email uniqueness, OTP format, decision payload shape).
+- **Secrets**: `SECRET_KEY` and `DEBUG` are read from the environment (`backend/.env`, loaded via `python-dotenv`) with dev-only fallbacks, so nothing real has to live in `settings.py`.
 
-Known gaps, honestly: `SECRET_KEY` is hardcoded in `settings.py` (fine for local dev, must move to an environment variable before any real deployment), `DEBUG = True` is unconditional, and there's no CSRF concern in practice since the API is JWT-only and stateless.
+Known gaps, honestly: there's no CSRF concern in practice since the API is JWT-only and stateless, and the login/register throttle scopes are in-process (DRF's default cache-backed throttle), so they reset per-worker rather than being enforced globally across a multi-process deployment.
 
 ## Database
 
@@ -405,9 +407,9 @@ Not currently implemented. `gunicorn` and `whitenoise` are present in `requireme
 
 ## Security Considerations
 
-Implemented: PBKDF2 password hashing, JWT auth with refresh rotation + blacklisting, role-scoped querysets (not just permission checks), explicit CORS allowlist, DRF serializer-level input validation on every write path, and a follow-up message rate limit.
+Implemented: Argon2id password hashing (PBKDF2 kept for existing hashes), JWT auth with refresh rotation + blacklisting + family-based reuse detection, the refresh token in an httpOnly/SameSite=Strict cookie with the access token kept in-memory client-side only, role-scoped querysets (not just permission checks), explicit CORS allowlist, DRF serializer-level input validation on every write path, login/register throttling on top of the follow-up message rate limit, and `SECRET_KEY`/`DEBUG` read from the environment.
 
-Not implemented / known gaps: `SECRET_KEY` is hardcoded (not read from environment), `DEBUG = True` unconditionally, tokens are stored in `localStorage` rather than an HttpOnly cookie, and there's no general-purpose API rate limiting beyond the one follow-up-message path.
+Not implemented / known gaps: no CSRF concern in practice since the API is JWT-only and stateless; login/register throttling is DRF's default in-process cache, so it isn't shared across worker processes in a multi-process deployment; and there's still no general-purpose API rate limiting beyond those two scopes plus the follow-up-message path.
 
 ## Performance & Scalability
 
@@ -427,8 +429,8 @@ Prioritized by what would most change the project's production-readiness, not by
 
 1. Move triage off a daemon thread onto a real task queue (Celery/RQ), so a crashed process doesn't strand a decision mid-run.
 2. Migrate `DocumentChunk` embeddings to PostgreSQL + pgvector — the schema is already shaped for it.
-3. Externalize `SECRET_KEY` and `DEBUG` to environment variables; add production settings (`ALLOWED_HOSTS`, secure cookie flags) as a distinct settings module.
-4. Add API-wide rate limiting (DRF throttling) beyond the one hand-rolled follow-up-message check.
+3. Add production settings (`ALLOWED_HOSTS`, a cache-backed throttle so login/register limits hold across worker processes) as a distinct settings module. `SECRET_KEY`/`DEBUG` are already environment-driven.
+4. Extend rate limiting beyond `/api/token/`, `/api/register/`, and the follow-up-message check to the rest of the write-path API.
 5. Build the confidence-signaling and metrics-dashboard surfaces already specified in [PRODUCT.md](PRODUCT.md) but intentionally left unbuilt.
 6. Add a CI pipeline running the existing Django test suite, plus actual frontend tests using the already-installed Vitest/Testing Library setup.
 

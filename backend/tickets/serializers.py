@@ -1,7 +1,15 @@
+import uuid
+from django.conf import settings
+from django.contrib.auth import get_user_model
 from django.contrib.auth.models import User
 from rest_framework import serializers
+from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
-from .models import Ticket, DecisionLog, TicketMessage, UserProfile
+from rest_framework_simplejwt.settings import api_settings as jwt_settings
+from rest_framework_simplejwt.state import token_backend
+from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, OutstandingToken
+from rest_framework_simplejwt.tokens import RefreshToken
+from .models import Ticket, DecisionLog, TicketMessage, UserProfile, TokenFamily
 from .otp import send_otp_email
 
 
@@ -79,6 +87,11 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         token = super().get_token(user)
         profile = getattr(user, 'profile', None)
         token['role'] = profile.role if profile else 'customer'
+        # Starts a fresh reuse-detection family for this login session; each
+        # refresh rotation carries the same family_id forward (see
+        # CookieTokenRefreshSerializer below).
+        outstanding = OutstandingToken.objects.get(jti=token['jti'])
+        TokenFamily.objects.create(outstanding_token=outstanding, family_id=uuid.uuid4())
         return token
 
     def validate(self, attrs):
@@ -170,3 +183,81 @@ class ResendOTPSerializer(serializers.Serializer):
         data['user'] = user
         data['profile'] = profile
         return data
+
+
+class CookieTokenRefreshSerializer(serializers.Serializer):
+    """
+    Reads the refresh token from the httpOnly cookie (via context['request'])
+    instead of the request body, and adds reuse-family revocation on top of
+    SimpleJWT's built-in rotate/blacklist: if the incoming token's jti is
+    already blacklisted — meaning it was already rotated once — every
+    OutstandingToken sharing its login family is blacklisted too, since we
+    can no longer tell the legitimate holder from whoever replayed it.
+    """
+
+    def validate(self, attrs):
+        raw_token = self.context['request'].COOKIES.get(settings.REFRESH_TOKEN_COOKIE_NAME)
+        if not raw_token:
+            raise InvalidToken('Refresh token missing.')
+
+        old_jti = self._peek_jti(raw_token)
+
+        try:
+            refresh = RefreshToken(raw_token)
+        except TokenError as e:
+            if old_jti and BlacklistedToken.objects.filter(token__jti=old_jti).exists():
+                self._revoke_family(old_jti)
+            raise InvalidToken('Refresh token is invalid, expired, or was already used.') from e
+
+        user_id = refresh.payload.get(jwt_settings.USER_ID_CLAIM)
+        try:
+            user = get_user_model().objects.get(**{jwt_settings.USER_ID_FIELD: user_id})
+        except get_user_model().DoesNotExist:
+            raise InvalidToken('No active account found for the given token.')
+        if not jwt_settings.USER_AUTHENTICATION_RULE(user):
+            raise InvalidToken('No active account found for the given token.')
+
+        data = {'access': str(refresh.access_token)}
+
+        if jwt_settings.ROTATE_REFRESH_TOKENS:
+            if jwt_settings.BLACKLIST_AFTER_ROTATION:
+                refresh.blacklist()
+            refresh.set_jti()
+            refresh.set_exp()
+            refresh.set_iat()
+            refresh.outstand()
+            data['refresh'] = str(refresh)
+            self._carry_family(old_jti, refresh['jti'])
+
+        return data
+
+    @staticmethod
+    def _peek_jti(raw_token):
+        """Signature/exp-verified decode, used only to read jti — safe to
+        trust even when the full Token() construction below is about to
+        reject the token as blacklisted."""
+        try:
+            return token_backend.decode(raw_token, verify=True).get('jti')
+        except Exception:
+            return None
+
+    @staticmethod
+    def _carry_family(old_jti, new_jti):
+        if not old_jti:
+            return
+        try:
+            family_id = TokenFamily.objects.get(outstanding_token__jti=old_jti).family_id
+        except TokenFamily.DoesNotExist:
+            family_id = uuid.uuid4()
+        new_outstanding = OutstandingToken.objects.get(jti=new_jti)
+        TokenFamily.objects.create(outstanding_token=new_outstanding, family_id=family_id)
+
+    @staticmethod
+    def _revoke_family(compromised_jti):
+        try:
+            family_id = TokenFamily.objects.get(outstanding_token__jti=compromised_jti).family_id
+        except TokenFamily.DoesNotExist:
+            return
+        family_tokens = OutstandingToken.objects.filter(family__family_id=family_id)
+        for outstanding in family_tokens:
+            BlacklistedToken.objects.get_or_create(token=outstanding)

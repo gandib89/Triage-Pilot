@@ -1,56 +1,27 @@
 import { Navigate } from "react-router-dom";
-import { jwtDecode } from "jwt-decode";
-import { REFRESH_TOKEN, ACCESS_TOKEN } from "../constants";
-import { useState, useEffect } from "react";
-import api from "../api";
-
+import { useEffect, useState } from "react";
+import { useAccessToken, useRole } from "../auth";
+import { refreshAccessToken } from "../api";
 
 function ProtectedRoute({ children, roles, redirectTo = '/tickets' }) {
-    const [isAuthorized, setIsAuthorized] = useState(null);
-    const [role, setRole] = useState(null);
+    const token = useAccessToken();
+    const role = useRole();
+    // A page load/reload starts with no access token in memory (it's never
+    // persisted) — recover it from the httpOnly refresh cookie before
+    // deciding this visitor is signed out. Nothing to recover if we already
+    // have a token.
+    const [refreshDone, setRefreshDone] = useState(Boolean(token));
 
     useEffect(() => {
-        auth().catch(() => setIsAuthorized(false))
-    }, [])
+        if (token) return;
+        let cancelled = false;
+        refreshAccessToken().finally(() => !cancelled && setRefreshDone(true));
+        return () => {
+            cancelled = true;
+        };
+    }, [token]);
 
-    const refreshToken = async () => {
-        const refreshToken = localStorage.getItem(REFRESH_TOKEN);
-        try {
-            const res = await api.post("/token/refresh/", {
-                refresh: refreshToken,
-            });
-            if (res.status === 200) {
-                localStorage.setItem(ACCESS_TOKEN, res.data.access)
-                setRole(jwtDecode(res.data.access).role || null)
-                setIsAuthorized(true)
-            } else {
-                setIsAuthorized(false)
-            }
-        } catch (error) {
-            console.log(error);
-            setIsAuthorized(false);
-        }
-    };
-
-    const auth = async () => {
-        const token = localStorage.getItem(ACCESS_TOKEN);
-        if (!token) {
-            setIsAuthorized(false);
-            return;
-        }
-        const decoded = jwtDecode(token);
-        const tokenExpiration = decoded.exp;
-        const now = Date.now() / 1000;
-
-        if (tokenExpiration < now) {
-            await refreshToken();
-        } else {
-            setRole(decoded.role || null)
-            setIsAuthorized(true);
-        }
-    };
-
-    if (isAuthorized === null) {
+    if (!token && !refreshDone) {
         return (
             <div className="flex min-h-[100dvh] items-center justify-center">
                 <span className="font-mono text-[11px] uppercase tracking-[0.2em] text-ink-faint">Authorizing</span>
@@ -58,7 +29,7 @@ function ProtectedRoute({ children, roles, redirectTo = '/tickets' }) {
         );
     }
 
-    if (!isAuthorized) {
+    if (!token) {
         return <Navigate to="/login" />;
     }
 

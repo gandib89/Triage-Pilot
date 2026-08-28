@@ -24,10 +24,13 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/4.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = "django-insecure-nma=xi6x2p-crjg^ifqqkapyu1qjd0l=+wn)-rijk_o%$!k3w_"
+# Falls back to the old hardcoded dev value so local setups without a .env
+# keep working; set SECRET_KEY in backend/.env for anything real.
+SECRET_KEY = os.environ.get(
+    'SECRET_KEY', "django-insecure-nma=xi6x2p-crjg^ifqqkapyu1qjd0l=+wn)-rijk_o%$!k3w_")
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.environ.get('DEBUG', 'False').lower() == 'true'
 
 ALLOWED_HOSTS = ["localhost", "127.0.0.1"]
 REST_FRAMEWORK = {
@@ -38,8 +41,20 @@ REST_FRAMEWORK = {
         'rest_framework.permissions.IsAuthenticated',
     ],
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
-    'PAGE_SIZE': 10
+    'PAGE_SIZE': 10,
+    'DEFAULT_THROTTLE_RATES': {
+        # Distinct from the follow-up-message limiter in TicketViewSet.
+        'login': '5/min',
+        'register': '3/min',
+    },
 }
+
+# Argon2id first so new/changed passwords hash there; PBKDF2 stays listed so
+# existing users' hashes still verify until they next change password.
+PASSWORD_HASHERS = [
+    'tickets.hashers.TriagePilotArgon2PasswordHasher',
+    'django.contrib.auth.hashers.PBKDF2PasswordHasher',
+]
 
 
 # Application definition
@@ -163,6 +178,12 @@ SIMPLE_JWT = {
     # Authorization: Bearer <token>
     'AUTH_HEADER_TYPES': ('Bearer',),
 }
+
+# The refresh token travels in an httpOnly cookie instead of the response
+# body/localStorage — see CookieTokenRefreshView / CustomTokenObtainPairView.
+REFRESH_TOKEN_COOKIE_NAME = 'refresh_token'
+REFRESH_TOKEN_COOKIE_PATH = '/api/token/'
+REFRESH_TOKEN_COOKIE_SECURE = not DEBUG
 
 # Email (used to send signup OTP codes). Defaults to printing to the console
 # so verification works locally with zero setup; set EMAIL_HOST_USER /
