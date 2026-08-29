@@ -52,9 +52,11 @@ IMPORTANT: Respond with ONLY valid JSON, no markdown code blocks, no explanation
 
 
 def call_ollama(prompt: str, model: str = "llama3.2:latest", timeout: int = 60) -> str:
-    """Call Ollama API with the prompt."""
+    """Call Ollama API with the prompt. `timeout` bounds the HTTP call itself,
+    so a hung local model can't wedge the calling background thread forever."""
     try:
-        response = ollama.chat(
+        client = ollama.Client(timeout=timeout)
+        response = client.chat(
             model=model,
             messages=[{'role': 'user', 'content': prompt}],
             options={

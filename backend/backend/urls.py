@@ -17,13 +17,28 @@ Including another URLconf
 from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
+from django.db import connection
+from django.db.utils import OperationalError
+from django.http import JsonResponse
 from django.urls import path, include
 from tickets.views import (
     CustomTokenObtainPairView, CookieTokenRefreshView, LogoutView,
     RegisterView, VerifyOTPView, ResendOTPView,
 )
 
+
+def healthz(request):
+    """Liveness + DB readiness in one: 200 if the DB answers, 503 if not."""
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute('SELECT 1')
+    except OperationalError:
+        return JsonResponse({'status': 'error', 'database': 'unreachable'}, status=503)
+    return JsonResponse({'status': 'ok'})
+
+
 urlpatterns = [
+    path('healthz/', healthz, name='healthz'),
     path('admin/', admin.site.urls),
     path('api/token/', CustomTokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('api/token/refresh/', CookieTokenRefreshView.as_view(), name='token_refresh'),

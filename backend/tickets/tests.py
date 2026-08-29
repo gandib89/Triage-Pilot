@@ -145,3 +145,45 @@ class RefreshTokenSecurityTests(TestCase):
 
         again = self.client.post('/api/token/refresh/')
         self.assertEqual(again.status_code, 401)
+
+
+class RoleBoundaryTests(TestCase):
+    """
+    Server-side authorization, not just the client's route gating: can a
+    customer reach a staff-only endpoint or another customer's ticket, and
+    can an unauthenticated request reach anything protected.
+    """
+
+    def setUp(self):
+        self.alice = User.objects.create_user('alice', password='pw12345')
+        self.bob = User.objects.create_user('bob', password='pw12345')
+        self.staff = User.objects.create_user('staffer2', password='pw12345')
+        self.staff.profile.role = 'staff'
+        self.staff.profile.save()
+
+        with patch('tickets.views.triage_in_background'):
+            self.alices_ticket = Ticket.objects.create(
+                created_by=self.alice, subject='hi', body='it broke')
+
+        self.as_alice = APIClient()
+        self.as_alice.force_authenticate(self.alice)
+        self.as_bob = APIClient()
+        self.as_bob.force_authenticate(self.bob)
+        self.as_staff = APIClient()
+        self.as_staff.force_authenticate(self.staff)
+
+    def test_customer_cannot_list_the_decision_queue(self):
+        res = self.as_alice.get('/api/decisions/')
+        self.assertEqual(res.status_code, 403)
+
+    def test_customer_cannot_see_another_customers_ticket(self):
+        res = self.as_bob.get(f'/api/tickets/{self.alices_ticket.pk}/')
+        self.assertEqual(res.status_code, 404)
+
+    def test_staff_can_see_any_customers_ticket(self):
+        res = self.as_staff.get(f'/api/tickets/{self.alices_ticket.pk}/')
+        self.assertEqual(res.status_code, 200)
+
+    def test_unauthenticated_request_is_rejected(self):
+        res = APIClient().get('/api/tickets/')
+        self.assertEqual(res.status_code, 401)

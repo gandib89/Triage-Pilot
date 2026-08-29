@@ -1,5 +1,6 @@
 from django.conf import settings
 from django.contrib.auth.models import User
+from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 from rest_framework import viewsets, status, generics, permissions
@@ -21,7 +22,7 @@ from .serializers import (
 )
 from .agent import apply_triage, triage_in_background
 from .otp import send_otp_email
-from .throttles import LoginRateThrottle, RegisterRateThrottle
+from .throttles import LoginRateThrottle, RegisterRateThrottle, TriageRetryThrottle
 
 
 def _set_refresh_cookie(response, refresh_str):
@@ -142,6 +143,11 @@ class TicketViewSet(viewsets.ModelViewSet):
         if profile and profile.is_staff_role:
             return queryset
         return queryset.filter(created_by=self.request.user)
+
+    def get_throttles(self):
+        if self.action == 'triage':
+            return [TriageRetryThrottle()]
+        return super().get_throttles()
 
     def perform_create(self, serializer):
         ticket = serializer.save(created_by=self.request.user)
@@ -310,11 +316,13 @@ class DecisionLogViewSet(viewsets.ReadOnlyModelViewSet):
         if decision == 'edited':
             decision_log.edited_action = serializer.validated_data['edited_action']
         decision_log.decided_at = timezone.now()
-        decision_log.save()
 
         ticket = decision_log.ticket
         ticket.status = 'rejected' if decision == 'rejected' else 'approved'
-        ticket.save()
+
+        with transaction.atomic():
+            decision_log.save()
+            ticket.save()
 
         return Response(
             DecisionLogSerializer(decision_log).data,
